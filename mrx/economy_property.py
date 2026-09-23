@@ -70,6 +70,20 @@ def owned(chat_id: int, uid: int) -> list[dict]:
     return _properties[chat_id][uid]
 
 
+def shared_with_me(chat_id: int, uid: int) -> list[tuple[int, dict]]:
+    """ارتقای فاز ۱۹ (Social/Family) — لیست (owner_id, property) که این کاربر
+    Co-owner ازشونه (نه مالک اصلی، ولی توی جمع‌آوری درآمد سهیمه). فقط املاک
+    خودِ کاربر که اسم همسرش (یا هرکسی) روش هدیه/Share شده."""
+    result = []
+    for owner_id, props in _properties.get(chat_id, {}).items():
+        if owner_id == uid:
+            continue
+        for p in props:
+            if p.get("co_owner_id") == uid:
+                result.append((owner_id, p))
+    return result
+
+
 def owned_count_of_type(chat_id: int, uid: int, ptype: str) -> int:
     return sum(1 for p in owned(chat_id, uid) if p["type"] == ptype)
 
@@ -83,6 +97,11 @@ def current_price(chat_id: int, uid: int, ptype: str) -> int:
     try:
         import economy_district
         base *= economy_district.multiplier_for(chat_id, uid, "property_price")
+    except Exception:
+        pass
+    try:
+        import economy_events
+        base *= economy_events.price_inflation_multiplier(chat_id)  # ارتقای فاز ۱۵: تورم
     except Exception:
         pass
     return round(base)
@@ -115,6 +134,15 @@ async def _collect_one(chat_id: int, uid: int, prop: dict) -> int:
 async def _collect_all(chat_id: int, uid: int) -> int:
     total = 0
     for prop in owned(chat_id, uid):
+        total += await _collect_one(chat_id, uid, prop)
+    return total
+
+
+async def _collect_shared(chat_id: int, uid: int) -> int:
+    """ارتقای فاز ۱۹: درآمد املاکی که این کاربر Co-owner‌شونه (نه مالک اصلی)
+    رو هم جمع می‌کنه — مستقیم به کیف‌پول خودش (نه مالک اصلی) واریز می‌شه."""
+    total = 0
+    for _owner_id, prop in shared_with_me(chat_id, uid):
         total += await _collect_one(chat_id, uid, prop)
     return total
 
@@ -201,7 +229,8 @@ async def buy_property_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await message.reply_text(f"❌ موجودی کافی نیست. قیمت: {price:,} {config.CURRENCY_NAME}")
         return
 
-    prop = {"id": _new_id(chat.id, uid), "type": key, "level": 1, "purchased_ts": time.time(), "last_collect_ts": time.time()}
+    prop = {"id": _new_id(chat.id, uid), "type": key, "level": 1, "purchased_ts": time.time(),
+            "last_collect_ts": time.time(), "co_owner_id": None}
     _log_history(prop, "PURCHASE", f"خرید اولیه به قیمت {price:,}")
     owned(chat.id, uid).append(prop)
     lines = [f"✅ {TYPES[key]['name']} #{prop['id']} خریداری شد!"]
@@ -295,6 +324,9 @@ async def transfer_property_command(update: Update, context: ContextTypes.DEFAUL
     if target.get("tenant_id"):
         await message.reply_text("❌ این ملک الان اجاره‌ست؛ اول باید اجارش تموم بشه.")
         return
+    if target.get("co_owner_id"):
+        await message.reply_text("❌ این ملک الان با همسرت مشترکه؛ اول با «لغو اشتراک ملک» لغوش کن.")
+        return
 
     await _collect_one(chat.id, giver.id, target)  # قبل از انتقال، درآمد باقی‌مونده تسویه بشه
     props.remove(target)
@@ -345,6 +377,9 @@ async def sell_property_to_command(update: Update, context: ContextTypes.DEFAULT
         return
     if target.get("tenant_id"):
         await message.reply_text("❌ این ملک الان اجاره‌ست؛ اول باید اجارش تموم بشه.")
+        return
+    if target.get("co_owner_id"):
+        await message.reply_text("❌ این ملک الان با همسرت مشترکه؛ اول با «لغو اشتراک ملک» لغوش کن.")
         return
 
     try:
@@ -517,6 +552,69 @@ async def property_history_command(update: Update, context: ContextTypes.DEFAULT
     await message.reply_text("\n".join(lines))
 
 
+async def share_property_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """اشتراک ملک [شناسه] — ارتقای فاز ۱۹ (Social/Family): ملکت رو با همسرت
+    مشترک می‌کنی؛ اون هم می‌تونه ازش درآمد جمع کنه (فروش/ارتقا/انتقال فقط
+    دست خودِ مالک اصلی می‌مونه، تا مالکیت مبهم نشه)."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    args = context.args or []
+    if not args:
+        await message.reply_text("استفاده: «اشتراک ملک [شناسه]»")
+        return
+    try:
+        prop_id = int(args[0])
+    except ValueError:
+        await message.reply_text("شناسه‌ی نامعتبر.")
+        return
+    target = next((p for p in owned(chat.id, uid) if p["id"] == prop_id), None)
+    if not target:
+        await message.reply_text("همچین ملکی توی مالکیتت نیست.")
+        return
+
+    import economy_marriage
+    if not economy_marriage.is_married(chat.id, uid):
+        await message.reply_text("❌ برای اشتراک‌گذاری ملک باید ازدواج کرده باشی.")
+        return
+    spouse_id = economy_marriage.spouse_of(chat.id, uid)
+
+    target["co_owner_id"] = spouse_id
+    _log_history(target, "PROPERTY", f"اشتراک‌گذاری با همسر (uid={spouse_id})")
+    await message.reply_text(f"✅ {TYPES[target['type']]['name']} #{prop_id} الان با همسرت مشترکه؛ اونم می‌تونه ازش درآمد جمع کنه.")
+    await host.save_state()
+
+
+async def unshare_property_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """لغو اشتراک ملک [شناسه]"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    args = context.args or []
+    if not args:
+        await message.reply_text("استفاده: «لغو اشتراک ملک [شناسه]»")
+        return
+    try:
+        prop_id = int(args[0])
+    except ValueError:
+        await message.reply_text("شناسه‌ی نامعتبر.")
+        return
+    target = next((p for p in owned(chat.id, uid) if p["id"] == prop_id), None)
+    if not target or not target.get("co_owner_id"):
+        await message.reply_text("همچین ملک مشترکی پیدا نشد.")
+        return
+    target["co_owner_id"] = None
+    _log_history(target, "PROPERTY", "لغو اشتراک‌گذاری")
+    await message.reply_text(f"✅ {TYPES[target['type']]['name']} #{prop_id} دیگه مشترک نیست.")
+    await host.save_state()
+
+
 async def my_property_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ملک من [شناسه] — بدون شناسه: لیست + جمع‌آوری درآمد. با شناسه: ارتقای اون ملک."""
     host = _host()
@@ -557,8 +655,10 @@ async def my_property_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     collected = await _collect_all(chat.id, uid)
+    collected_shared = await _collect_shared(chat.id, uid)  # فاز ۱۹: املاک مشترک همسر
     props = owned(chat.id, uid)
-    if not props:
+    shared = shared_with_me(chat.id, uid)
+    if not props and not shared:
         await message.reply_text("هنوز هیچ ملکی نداری. با «املاک» لیست انواع رو ببین.")
         return
 
@@ -568,13 +668,22 @@ async def my_property_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         info = TYPES[p["type"]]
         value = current_value(p)
         total_value += value
-        lines.append(f"#{p['id']} {info['name']} — Level {p['level']} — ارزش: {value:,} {config.CURRENCY_NAME}")
+        shared_badge = " 👫" if p.get("co_owner_id") else ""
+        lines.append(f"#{p['id']} {info['name']} — Level {p['level']} — ارزش: {value:,} {config.CURRENCY_NAME}{shared_badge}")
+    if shared:
+        lines.append("")
+        lines.append("👫 املاک مشترکی که همسرت باهات به اشتراک گذاشته:")
+        for owner_id, p in shared:
+            info = TYPES[p["type"]]
+            owner_name = host._user_display_names.get(owner_id, str(owner_id))
+            lines.append(f"  #{p['id']} {info['name']} (مالک: {owner_name}) — Level {p['level']}")
     lines.append("")
     lines.append(f"💎 ارزش کل املاک: {total_value:,} {config.CURRENCY_NAME}")
-    if collected > 0:
-        lines.append(f"🎁 درآمد جمع‌شده (پس از مالیات): +{collected} {config.CURRENCY_NAME}")
+    total_collected = collected + collected_shared
+    if total_collected > 0:
+        lines.append(f"🎁 درآمد جمع‌شده (پس از مالیات): +{total_collected} {config.CURRENCY_NAME}")
     lines.append("")
-    lines.append("ارتقا: «ملک من [شناسه]» — فروش: «فروش ملک [شناسه]»")
+    lines.append("ارتقا: «ملک من [شناسه]» — فروش: «فروش ملک [شناسه]» — اشتراک با همسر: «اشتراک ملک [شناسه]»")
     await message.reply_text("\n".join(lines))
     await host.save_state()
 

@@ -2117,6 +2117,13 @@ ECONOMY_EVENTS = {
     "job_festival":    {"label": "💼 Job Festival",        "effect": "job_xp_multiplier",       "value": 2.0, "duration_minutes": 90},
     "underground_night": {"label": "🌑 Underground Night", "effect": "underground_reward_multiplier", "value": 1.5, "duration_minutes": 90},
     "rare_item_event": {"label": "💎 Rare Item Event",     "effect": "rare_item_chance_multiplier", "value": 3.0, "duration_minutes": 60},
+    # ---------- ارتقای فاز ۱۵: رویدادهای منفی/بحرانی (طبق درخواست خودِ کاربر:
+    # رکود، بحران سوخت، تورم، کاهش/افزایش تقاضا) — قبلاً فقط رویداد مثبت بود ----------
+    "recession":       {"label": "📉 رکود اقتصادی",        "effect": "income_multiplier",       "value": 0.7, "duration_minutes": 45},
+    "fuel_crisis":     {"label": "⛽ بحران سوخت",          "effect": "fuel_cost_multiplier",    "value": 1.8, "duration_minutes": 60},
+    "inflation":       {"label": "📈 تورم",                "effect": "price_inflation_multiplier", "value": 1.25, "duration_minutes": 90},
+    "demand_drop":     {"label": "🧺 کاهش تقاضا",          "effect": "demand_multiplier",       "value": 0.7, "duration_minutes": 60},
+    "demand_surge":    {"label": "🔥 افزایش تقاضا",        "effect": "demand_multiplier",       "value": 1.4, "duration_minutes": 45},
 }
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -88,11 +88,16 @@ def _find_owned(chat_id: int, uid: int, args: list) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def current_price(chat_id: int, uid: int, btype: str) -> int:
-    """قیمت خرید نو، با احتساب ضریب منطقه (فاز ۴)."""
+    """قیمت خرید نو، با احتساب ضریب منطقه (فاز ۴) و تورم (ارتقای فاز ۱۵)."""
     base = float(TYPES[btype]["base_price"])
     try:
         import economy_district
         base *= economy_district.multiplier_for(chat_id, uid, "business_price")
+    except Exception:
+        pass
+    try:
+        import economy_events
+        base *= economy_events.price_inflation_multiplier(chat_id)
     except Exception:
         pass
     return round(base)
@@ -102,7 +107,7 @@ def _is_ad_active(b: dict) -> bool:
     return bool(b.get("ad_until") and b["ad_until"] > time.time())
 
 
-def hourly_revenue(b: dict) -> float:
+def hourly_revenue(chat_id: int, b: dict) -> float:
     """درآمد ناخالص در ساعت، با شرایط *فعلی* (موجودی/کارمند/قیمت/تبلیغات).
     اگه موجودی صفر باشه، درآمد صفره — طبق طراحی، نه باگ."""
     if b["inventory"] <= 0:
@@ -116,7 +121,13 @@ def hourly_revenue(b: dict) -> float:
     # ولی سود هر واحد کمتره - جمعاً یه بهینه‌ی داخلی (نه لزوماً در لبه‌ها) داره.
     customer_mult = max(0.3, min(1.3, 2 - price_mult))
     ad_mult = getattr(config, "BUSINESS_AD_REVENUE_MULTIPLIER", 1.3) if _is_ad_active(b) else 1.0
-    return info["base_revenue_per_hour"] * level_mult * employee_mult * price_mult * customer_mult * ad_mult
+    revenue = info["base_revenue_per_hour"] * level_mult * employee_mult * price_mult * customer_mult * ad_mult
+    try:
+        import economy_events
+        revenue *= economy_events.demand_multiplier(chat_id)  # ارتقای فاز ۱۵: کاهش/افزایش تقاضا
+    except Exception:
+        pass
+    return revenue
 
 
 def hourly_expense(b: dict) -> float:
@@ -157,7 +168,7 @@ def tax_due(b: dict) -> int:
     return round(current_value(b) * info["tax_rate"] * periods)
 
 
-def _simulate_period(b: dict, elapsed_hours: float) -> tuple[float, float, float]:
+def _simulate_period(chat_id: int, b: dict, elapsed_hours: float) -> tuple[float, float, float]:
     """درآمد/هزینه/موجودی‌مصرفی رو برای elapsed_hours ساعت (با نرخ فعلی، ثابت
     فرض‌شده روی کل بازه — همون ساده‌سازی‌ای که Property/City هم دارن)
     حساب می‌کنه. سقف BUSINESS_MAX_LAZY_HOURS داره تا کسی با غیبت طولانی
@@ -169,7 +180,7 @@ def _simulate_period(b: dict, elapsed_hours: float) -> tuple[float, float, float
     consumption_capacity_hours = (b["inventory"] / info["inventory_consumption_per_hour"]
                                    if info["inventory_consumption_per_hour"] > 0 else elapsed_hours)
     productive_hours = min(elapsed_hours, consumption_capacity_hours)
-    revenue = hourly_revenue(b) * productive_hours
+    revenue = hourly_revenue(chat_id, b) * productive_hours
     expense = hourly_expense(b) * elapsed_hours  # اجاره/حقوق حتی بدون موجودی هم پرداخت می‌شه
     consumed = info["inventory_consumption_per_hour"] * productive_hours
     return revenue, expense, consumed
@@ -183,7 +194,7 @@ async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
     elapsed_h = (now - b["last_collect_ts"]) / 3600.0
     if elapsed_h <= 0:
         return 0, 0
-    revenue, expense, consumed = _simulate_period(b, elapsed_h)
+    revenue, expense, consumed = _simulate_period(chat_id, b, elapsed_h)
     b["inventory"] = max(0, round(b["inventory"] - consumed))
     b["last_collect_ts"] = now
     b["lifetime_revenue"] = b.get("lifetime_revenue", 0) + revenue
@@ -462,7 +473,7 @@ async def set_price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _collect_one(chat.id, uid, target)  # قبل از تغییر قیمت، حساب قبلی با قیمت قبلی تسویه بشه
     target["price_mult"] = mult
     _log_history(target, "BUSINESS", f"تغییر ضریب قیمت به {mult}")
-    await message.reply_text(f"✅ ضریب قیمت روی {mult} تنظیم شد. (درآمد تخمینی: {round(hourly_revenue(target))} {config.CURRENCY_NAME}/h)")
+    await message.reply_text(f"✅ ضریب قیمت روی {mult} تنظیم شد. (درآمد تخمینی: {round(hourly_revenue(chat.id, target))} {config.CURRENCY_NAME}/h)")
     await host.save_state()
 
 
@@ -588,7 +599,7 @@ async def my_business_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         lines.append(
             f"#{b['id']} {info['name']} Lv{b['level']} {ad_badge} — کارمند: {b['employees']}/{info['max_employees']} — "
             f"موجودی: {b['inventory']}/{info['inventory_capacity']} — قیمت: ×{b['price_mult']} — "
-            f"درآمد: {round(hourly_revenue(b))}/h — هزینه: {round(hourly_expense(b))}/h{tax_note}"
+            f"درآمد: {round(hourly_revenue(chat.id, b))}/h — هزینه: {round(hourly_expense(b))}/h{tax_note}"
         )
     lines.append("")
     if total_net > 0:
@@ -612,7 +623,7 @@ async def business_profit_command(update: Update, context: ContextTypes.DEFAULT_
         await message.reply_text("استفاده: «سود کسب‌وکار [شناسه]»")
         return
     info = TYPES[target["type"]]
-    rev_h, exp_h = hourly_revenue(target), hourly_expense(target)
+    rev_h, exp_h = hourly_revenue(chat.id, target), hourly_expense(target)
     lifetime_net = target.get("lifetime_revenue", 0) - target.get("lifetime_expense", 0)
     lines = [
         f"📊 داشبورد سود/زیان — {info['name']} #{target['id']}",

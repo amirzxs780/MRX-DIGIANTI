@@ -203,6 +203,13 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     success_chance = getattr(config, "THEFT_BASE_SUCCESS_CHANCE", 0.42) + level_bonus
     success_chance *= (1 - protection)
+    # ارتقای فاز ۴: منطقه‌ی زندگی *هدف* روی امنیتش اثر داره — دزدی از کسی که
+    # توی محله‌ی فقیرنشین زندگی می‌کنه (امنیت کمتر) راحت‌تره، از VIP سخت‌تره.
+    try:
+        import economy_district
+        success_chance *= economy_district.multiplier_for(chat.id, target_id, "crime")
+    except Exception:
+        pass
     success_chance = max(getattr(config, "THEFT_SUCCESS_CHANCE_MIN", 0.05), min(success_chance, getattr(config, "THEFT_SUCCESS_CHANCE_CAP", 0.75)))
 
     success = random.random() < success_chance

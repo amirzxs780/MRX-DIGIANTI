@@ -7182,6 +7182,8 @@ PERSIAN_COMMAND_ALIASES = {
     "خرید ملک": economy_property.buy_property_command,
     "فروش ملک": economy_property.sell_property_command,
     "ملک من": economy_property.my_property_command,
+    "اشتراک ملک": economy_property.share_property_command,
+    "لغو اشتراک ملک": economy_property.unshare_property_command,
     "انتقال ملک": economy_property.transfer_property_command,
     "فروش ملک به": economy_property.sell_property_to_command,
     "اجاره ملک": economy_property.rent_property_command,
@@ -7505,6 +7507,8 @@ def main():
     app.add_handler(CommandHandler("buyproperty", economy_property.buy_property_command))
     app.add_handler(CommandHandler("sellproperty", economy_property.sell_property_command))
     app.add_handler(CommandHandler("myproperty", economy_property.my_property_command))
+    app.add_handler(CommandHandler("shareproperty", economy_property.share_property_command))
+    app.add_handler(CommandHandler("unshareproperty", economy_property.unshare_property_command))
     app.add_handler(CommandHandler("transferproperty", economy_property.transfer_property_command))
     app.add_handler(CommandHandler("sellpropertyto", economy_property.sell_property_to_command))
     app.add_handler(CommandHandler("rentproperty", economy_property.rent_property_command))

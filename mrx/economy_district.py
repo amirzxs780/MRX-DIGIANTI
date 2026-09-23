@@ -64,6 +64,8 @@ def multiplier_for(chat_id: int, uid: int, kind: str) -> float:
 
 
 def reputation_bonus_of(chat_id: int, uid: int) -> int:
+    """Reputation Bonus منطقه‌ی فعلی کاربر — برای ماژول‌های دیگه (مثل Crime/
+    Reputation آینده) که بخوان بدون دونستن جزئیات DISTRICTS این عدد رو بخونن."""
     d = DISTRICTS.get(district_of(chat_id, uid))
     return int(d.get("reputation_bonus", 0)) if d else 0
 
@@ -159,11 +161,11 @@ async def move_district_command(update: Update, context: ContextTypes.DEFAULT_TY
             await message.reply_text(f"❌ موجودی کافی نیست. هزینه‌ی جابه‌جایی: {cost:,} {config.CURRENCY_NAME}")
             return
 
+    old_bonus = DISTRICTS[current].get("reputation_bonus", 0)
     _residency[chat.id][uid] = key
     try:
         import profile_engine
-        profile_engine.adjust_stat(chat.id, uid, "fame",
-                                    info.get("reputation_bonus", 0) - DISTRICTS[current].get("reputation_bonus", 0))
+        profile_engine.adjust_stat(chat.id, uid, "fame", reputation_bonus_of(chat.id, uid) - old_bonus)
     except Exception as e:
         logger.warning(f"آپدیت Fame بعد از جابه‌جایی منطقه ناموفق بود (نادیده گرفته شد): {e}")
 

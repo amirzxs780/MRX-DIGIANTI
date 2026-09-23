@@ -82,12 +82,17 @@ def _is_insured(v: dict) -> bool:
 
 
 def current_price(chat_id: int, uid: int, vtype: str) -> int:
-    """قیمت خرید نو، با احتساب ضریب منطقه (فاز ۴)."""
+    """قیمت خرید نو، با احتساب ضریب منطقه (فاز ۴) و تورم (ارتقای فاز ۱۵)."""
     info = TYPES[vtype]
     base = float(info["base_price"])
     try:
         import economy_district
         base *= economy_district.multiplier_for(chat_id, uid, "vehicle_price")
+    except Exception:
+        pass
+    try:
+        import economy_events
+        base *= economy_events.price_inflation_multiplier(chat_id)
     except Exception:
         pass
     return round(base)
@@ -242,11 +247,17 @@ def repair_cost(v: dict) -> int:
     return round(info["base_price"] * per_point * missing)
 
 
-def refuel_cost(v: dict) -> int:
+def refuel_cost(chat_id: int, v: dict) -> int:
     info = TYPES[v["type"]]
     missing = 100 - v["fuel"]
     per_percent = getattr(config, "VEHICLE_FUEL_COST_PER_PERCENT_FRACTION", 0.003)
-    return round(info["base_price"] * per_percent * missing)
+    cost = info["base_price"] * per_percent * missing
+    try:
+        import economy_events
+        cost *= economy_events.fuel_cost_multiplier(chat_id)  # ارتقای فاز ۱۵: بحران سوخت
+    except Exception:
+        pass
+    return round(cost)
 
 
 def insurance_cost(v: dict) -> int:
@@ -568,7 +579,7 @@ async def refuel_vehicle_command(update: Update, context: ContextTypes.DEFAULT_T
     if target["fuel"] >= 100:
         await message.reply_text("باک همین الان هم پره.")
         return
-    cost = refuel_cost(target)
+    cost = refuel_cost(chat.id, target)
     try:
         await economy_core.remove_coins(chat.id, uid, cost, kind="OTHER", note=f"سوخت‌گیری {TYPES[target['type']]['name']}")
     except economy_core.InsufficientFundsError:

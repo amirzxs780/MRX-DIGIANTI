@@ -126,6 +126,24 @@ def shop_price_multiplier(chat_id: int) -> float:
     return 1.0
 
 
+def fuel_cost_multiplier(chat_id: int) -> float:
+    """ارتقای فاز ۱۵: بحران سوخت — هزینه‌ی سوخت‌گیری خودرو بالا می‌ره."""
+    return _multiplier_for(chat_id, "fuel_cost_multiplier")
+
+
+def price_inflation_multiplier(chat_id: int) -> float:
+    """ارتقای فاز ۱۵: تورم — قیمت خرید ملک/خودرو/کسب‌وکار (دارایی‌های بادوام)
+    بالا می‌ره. برخلاف shop_price_multiplier که برای فروشگاه موقته، این
+    برای همه‌ی بازار دارایی‌ست."""
+    return _multiplier_for(chat_id, "price_inflation_multiplier")
+
+
+def demand_multiplier(chat_id: int) -> float:
+    """ارتقای فاز ۱۵: کاهش/افزایش تقاضا — درآمد کسب‌وکارها رو تحت تأثیر
+    قرار می‌ده (مستقل از موجودی/کارمند/قیمت خودِ صاحب کسب‌وکار)."""
+    return _multiplier_for(chat_id, "demand_multiplier")
+
+
 # ---------------------------------------------------------------------------
 # 📋 نمایش / Admin
 # ---------------------------------------------------------------------------
