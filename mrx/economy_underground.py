@@ -116,6 +116,11 @@ async def _run_contract(update: Update, contract_key: str) -> None:
         stats["successes"] += 1
         stats["reputation"] += 1
         stats["xp"] += contract["xp"]
+        try:
+            import profile_engine
+            profile_engine.adjust_stat(chat.id, uid, "crime", getattr(config, "CRIME_STAT_GAIN_ON_SUCCESS", 3))
+        except Exception as e:
+            logger.warning(f"آپدیت Crime Stat ناموفق بود (نادیده گرفته شد): {e}")
         lines.append(f"✅ قرارداد موفق بود! +{reward} {config.CURRENCY_EMOJI}")
         lines.append(f"💰 موجودی: {new_wallet} {config.CURRENCY_NAME}")
 

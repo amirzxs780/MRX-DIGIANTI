@@ -1196,6 +1196,14 @@ NEEDS_REST_COOLDOWN_MINUTES = 30
 NEEDS_REST_STRESS_RELIEF = 25          # هر بار استراحت، این‌قدر استرس کم می‌شه
 NEEDS_REST_HAPPINESS_BONUS = 10        # هر بار استراحت، این‌قدر شادی اضافه می‌شه
 
+# ---------- فاز ۲۲ ارتقا — اتصال Crime/Trust به رویدادهای واقعی (قبلاً این
+# دو استت تعریف شده بودن ولی هیچ‌جا واقعاً تغییر نمی‌کردن) ----------
+CRIME_STAT_GAIN_ON_SUCCESS = 3    # هر جرم موفق (دزدی/زیرزمینی)
+CRIME_STAT_GAIN_ON_FAIL = 1       # هر جرم ناموفق (بازم تلاش برای جرم بود)
+TRUST_STAT_GAIN_ON_TIME_PAYMENT = 2   # هر قسط وام به‌موقع
+TRUST_STAT_LOSS_ON_DEFAULT = 15       # نکول کامل وام
+TRUST_STAT_GAIN_ON_GIFT = 1           # هر هدیه به همسر
+
 # حداقل Level لازم برای Prestige گرفتن (فاز ۳)
 PRESTIGE_LEVEL_REQUIREMENT = 50
 

@@ -231,6 +231,11 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stats["best_streak"] = max(stats["best_streak"], stats["streak"])
         stats["xp"] += getattr(config, "THEFT_XP_PER_SUCCESS", 25)
         _bump_wanted(chat.id, uid, getattr(config, "THEFT_WANTED_INCREASE_ON_SUCCESS", 1))
+        try:
+            import profile_engine
+            profile_engine.adjust_stat(chat.id, uid, "crime", getattr(config, "CRIME_STAT_GAIN_ON_SUCCESS", 3))
+        except Exception as e:
+            logger.warning(f"آپدیت Crime Stat ناموفق بود (نادیده گرفته شد): {e}")
 
         insured_note = " (بیمه‌ی هدف جلوی مقداری از ضرر رو گرفت)" if protection > 0 else ""
         lines.append(f"🦹 دزدی موفق بود! +{amount} {config.CURRENCY_EMOJI}{insured_note}")
@@ -244,6 +249,11 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stats["streak"] = 0
         stats["xp"] += getattr(config, "THEFT_XP_PER_FAIL", 5)
         _bump_wanted(chat.id, uid, getattr(config, "THEFT_WANTED_INCREASE_ON_FAIL", 2))
+        try:
+            import profile_engine
+            profile_engine.adjust_stat(chat.id, uid, "crime", getattr(config, "CRIME_STAT_GAIN_ON_FAIL", 1))
+        except Exception as e:
+            logger.warning(f"آپدیت Crime Stat ناموفق بود (نادیده گرفته شد): {e}")
 
         jail_minutes = random.uniform(config.THEFT_FAIL_JAIL_MIN_MINUTES, config.THEFT_FAIL_JAIL_MAX_MINUTES)
         await _send_to_jail(chat.id, uid, jail_minutes)

@@ -259,6 +259,11 @@ async def gift_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     xp_gain = round(amount / 1000 * getattr(config, "MARRIAGE_GIFT_XP_PER_1000_COINS", 10))
     couple["xp"] += xp_gain
     couple["gifts_count"] += 1
+    try:
+        import profile_engine
+        profile_engine.adjust_stat(chat.id, uid, "trust", getattr(config, "TRUST_STAT_GAIN_ON_GIFT", 1))
+    except Exception as e:
+        logger.warning(f"آپدیت Trust Stat ناموفق بود (نادیده گرفته شد): {e}")
     level_events = []
     while couple["xp"] >= _xp_needed(couple["level"]):
         couple["xp"] -= _xp_needed(couple["level"])

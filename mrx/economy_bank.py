@@ -143,6 +143,11 @@ async def _resolve_loans(chat_id: int, uid: int) -> list[str]:
                 _adjust_credit(chat_id, uid, -getattr(config, "CREDIT_SCORE_DEFAULT_PENALTY", 120))
                 loan["history"].append({"ts": now, "event": "DEFAULT", "note": "نکول کامل وام"})
                 events.append(f"🚫 وام #{loan['id']} نکول شد! اعتبارت به‌شدت آسیب دید. تا مدتی وام جدید نمی‌گیری.")
+                try:
+                    import profile_engine
+                    profile_engine.adjust_stat(chat_id, uid, "trust", -getattr(config, "TRUST_STAT_LOSS_ON_DEFAULT", 15))
+                except Exception as e:
+                    logger.warning(f"آپدیت Trust Stat ناموفق بود (نادیده گرفته شد): {e}")
                 break
     return events
 
@@ -682,6 +687,11 @@ async def pay_loan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loan["next_due_ts"] = time.time() + period_s
     _adjust_credit(chat.id, uid, getattr(config, "CREDIT_SCORE_ON_TIME_BONUS", 15))
     loan["history"].append({"ts": time.time(), "event": "PAYMENT", "note": f"قسط {pay_amount:,} پرداخت شد"})
+    try:
+        import profile_engine
+        profile_engine.adjust_stat(chat.id, uid, "trust", getattr(config, "TRUST_STAT_GAIN_ON_TIME_PAYMENT", 2))
+    except Exception as e:
+        logger.warning(f"آپدیت Trust Stat ناموفق بود (نادیده گرفته شد): {e}")
 
     lines = [f"✅ قسط وام #{loan_id} پرداخت شد: -{pay_amount:,} {config.CURRENCY_NAME}"]
     if loan["remaining"] <= 0:
