@@ -76,6 +76,7 @@ import economy_property
 import economy_district
 import economy_vehicle
 import economy_business
+import economy_clothing
 import economy_marriage
 import economy_pet
 import economy_games
@@ -427,6 +428,7 @@ async def save_state():
         economy_district.save_state(),
         economy_vehicle.save_state(),
         economy_business.save_state(),
+        economy_clothing.save_state(),
         economy_admin.save_state(),
         economy_marriage.save_state(),
         economy_pet.save_state(),
@@ -463,6 +465,7 @@ def load_state():
     economy_district.load_state()
     economy_vehicle.load_state()
     economy_business.load_state()
+    economy_clothing.load_state()
     economy_admin.load_state()
     economy_marriage.load_state()
     economy_pet.load_state()
@@ -2652,57 +2655,6 @@ async def track_chat_and_stats(update: Update, context: ContextTypes.DEFAULT_TYP
                 coin_gain = round(coin_gain * profile_engine.wellbeing_multiplier(chat.id, user.id))  # فاز ۱۷: اثر ملایم Needs
                 if coin_gain:
                     await economy_core.add_coins(chat.id, user.id, coin_gain, kind="REWARD", note="activity")
-
-
-async def _build_profile_text(chat_id: int, user) -> str:
-    uid = user.id
-    name = user.first_name or user.username or str(uid)
-    _prune_warnings(chat_id, uid)
-    xp = _xp[chat_id].get(uid, 0)
-    level, into_level, needed = _xp_progress(xp)
-    title = _display_title(chat_id, uid)
-    msg_count = _message_counts[chat_id].get(uid, 0)
-    warn_count = _warnings[chat_id].get(uid, 0)
-    warn_limit = _warn_limit[chat_id]
-    if uid in _enemies[chat_id]:
-        relation = "دشمن ⚔️"
-    elif uid in _friends[chat_id]:
-        relation = "دوست 🤝"
-    else:
-        relation = "عادی"
-    join_ts = _join_times[chat_id].get(uid)
-    join_str = time.strftime("%Y-%m-%d", time.localtime(join_ts)) if join_ts else "نامشخص"
-
-    ranking = sorted(_xp[chat_id].items(), key=lambda kv: kv[1], reverse=True)
-    rank = next((i + 1 for i, (u, _x) in enumerate(ranking) if u == uid), None)
-    rank_text = f"#{rank}" if rank else "—"
-
-    badges = _owned_badges[chat_id].get(uid, set())
-    badge_line = ""
-    if badges:
-        badge_emojis = " ".join(
-            config.SHOP_ITEMS[b]["emoji"] for b in badges if b in config.SHOP_ITEMS
-        )
-        badge_line = f"🎖️ بج‌ها: {badge_emojis}\n"
-
-    economy_line = ""
-    if get_setting(chat_id, "economy_enabled"):
-        bal = _wallet[chat_id].get(uid, 0)
-        economy_line = f"{config.CURRENCY_EMOJI} موجودی: {bal} {config.CURRENCY_NAME}\n"
-
-    return (
-        f"👤 پروفایل {name}\n"
-        f"—————————————\n"
-        f"🏷️ لقب: {title or '—'}\n"
-        f"{badge_line}"
-        f"🏆 Level {level} | XP: {xp} ({into_level}/{needed})\n"
-        f"{economy_line}"
-        f"📊 رتبه‌ی گروه (بر اساس XP): {rank_text}\n"
-        f"💬 تعداد پیام ثبت‌شده: {msg_count}\n"
-        f"⚠️ اخطار فعال: {warn_count} از {warn_limit}\n"
-        f"🤝 وضعیت رابطه: {relation}\n"
-        f"📅 تاریخ ورود به گروه: {join_str}"
-    )
 
 
 async def _send_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7074,6 +7026,11 @@ PERSIAN_COMMAND_ALIASES = {
     "کالکشن من": profile_engine.collections_command,
     "غذا خوردن": profile_engine.eat_command,
     "استراحت": profile_engine.rest_command,
+    "فروشگاه لباس": economy_clothing.clothing_shop_command,
+    "خرید لباس": economy_clothing.buy_clothing_command,
+    "پوشیدن": economy_clothing.wear_command,
+    "درآوردن": economy_clothing.unwear_command,
+    "ست من": economy_clothing.outfit_command,
     "منطقه": economy_district.district_command,
     "تغییر منطقه": economy_district.move_district_command,
 
@@ -7419,6 +7376,11 @@ def main():
     app.add_handler(CommandHandler("collections", profile_engine.collections_command))
     app.add_handler(CommandHandler("eat", profile_engine.eat_command))
     app.add_handler(CommandHandler("rest", profile_engine.rest_command))
+    app.add_handler(CommandHandler("clothingshop", economy_clothing.clothing_shop_command))
+    app.add_handler(CommandHandler("buyclothing", economy_clothing.buy_clothing_command))
+    app.add_handler(CommandHandler("wear", economy_clothing.wear_command))
+    app.add_handler(CommandHandler("unwear", economy_clothing.unwear_command))
+    app.add_handler(CommandHandler("outfit", economy_clothing.outfit_command))
     app.add_handler(CommandHandler("district", economy_district.district_command))
     app.add_handler(CommandHandler("movedistrict", economy_district.move_district_command))
     app.add_handler(CommandHandler("vehicle", economy_vehicle.vehicle_types_command))

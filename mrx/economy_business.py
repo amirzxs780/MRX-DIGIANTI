@@ -312,6 +312,11 @@ async def buy_business_command(update: Update, context: ContextTypes.DEFAULT_TYP
         lines += await economy_missions.record_progress(chat.id, uid, "business_buy", 1)
     except Exception as e:
         logger.warning(f"ثبت پیشرفت ماموریت business_buy ناموفق بود: {e}")
+    try:
+        import economy_achievements
+        lines.extend(economy_achievements.check_all(chat.id, uid))
+    except Exception as e:
+        logger.warning(f"چک دستاوردهای اقتصادی ناموفق بود: {e}")
     await message.reply_text("\n".join(lines))
     await host.save_state()
 
@@ -524,7 +529,13 @@ async def upgrade_business_command(update: Update, context: ContextTypes.DEFAULT
     await _collect_one(chat.id, uid, target)
     target["level"] += 1
     _log_history(target, "BUSINESS", f"ارتقا به Level {target['level']} به هزینه‌ی {cost:,}")
-    await message.reply_text(f"⭐ {TYPES[target['type']]['name']} #{target['id']} رفت Level {target['level']}!")
+    lines = [f"⭐ {TYPES[target['type']]['name']} #{target['id']} رفت Level {target['level']}!"]
+    try:
+        import economy_achievements
+        lines.extend(economy_achievements.check_all(chat.id, uid))
+    except Exception as e:
+        logger.warning(f"چک دستاوردهای اقتصادی ناموفق بود: {e}")
+    await message.reply_text("\n".join(lines))
     await host.save_state()
 
 

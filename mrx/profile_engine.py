@@ -833,6 +833,15 @@ def collection_summary(chat_id: int, uid: int) -> dict:
         pass
 
     try:
+        import economy_clothing
+        owned = economy_clothing.owned_items(chat_id, uid)
+        total = len(economy_clothing.CATALOG)
+        if total:
+            result["👔 لباس‌ها"] = (len(owned), total)
+    except Exception:
+        pass
+
+    try:
         host = _host()
         owned_badges = host._owned_badges.get(chat_id, {}).get(uid, set())
         total = len([k for k, v in config.SHOP_ITEMS.items() if not v.get("duration_hours")])
@@ -993,9 +1002,73 @@ def build_profile_card(chat_id: int, viewer_id: int, target_user) -> str:
                 economy_line += f"👑 عنوان اقتصادی: {econ_title}\n"
         except Exception:
             pass
+        # ارتقای فاز ۲۵ (Player Dashboard کامل): املاک/خودرو/کسب‌وکار/پت/رابطه/Wanted
+        try:
+            import economy_property
+            n = len(economy_property.owned(chat_id, uid))
+            if n:
+                economy_line += f"🏠 املاک: {n}\n"
+        except Exception:
+            pass
+        try:
+            import economy_vehicle
+            n = len(economy_vehicle.owned(chat_id, uid))
+            if n:
+                economy_line += f"🚗 خودرو: {n}\n"
+        except Exception:
+            pass
+        try:
+            import economy_business
+            n = len(economy_business.owned(chat_id, uid))
+            if n:
+                economy_line += f"🏢 کسب‌وکار: {n}\n"
+        except Exception:
+            pass
+        try:
+            import economy_pet
+            pet = economy_pet.get_pet(chat_id, uid)
+            if pet:
+                info = economy_pet.SPECIES[pet["species"]]
+                economy_line += f"🐕 پت: {info['name']} (Level {pet['level']})\n"
+        except Exception:
+            pass
+        try:
+            import economy_marriage
+            if economy_marriage.is_married(chat_id, uid):
+                spouse_id = economy_marriage.spouse_of(chat_id, uid)
+                spouse_name = host._user_display_names.get(spouse_id, str(spouse_id))
+                economy_line += f"❤️ متأهل با: {spouse_name}\n"
+        except Exception:
+            pass
+        try:
+            import economy_theft
+            wanted = economy_theft.wanted_level(chat_id, uid)
+            if wanted:
+                economy_line += f"⚠️ Wanted: {round(wanted)}\n"
+        except Exception:
+            pass
+        try:
+            import economy_clothing
+            economy_line += economy_clothing.outfit_summary_line(chat_id, uid)
+        except Exception:
+            pass
 
     progress_frac = (into_level / needed) if needed else 0
     views_line = f"👁 بازدید پروفایل: {views_count}\n" if getattr(config, "PROFILE_VIEWS_ENABLED", True) else ""
+
+    # ارتقای فاز ۲۵: وضعیت رابطه (دوست/دشمن)، اخطار، تاریخ ورود — قبلاً توی
+    # یه تابع قدیمی و بی‌استفاده (_build_profile_text در bot.py) بودن که
+    # هیچ‌جا صدا زده نمی‌شد؛ به‌جای نگه‌داشتن دو تا کارت پروفایل موازی،
+    # این خط‌ها رو به همین کارت اصلی منتقل کردم و اون تابع مرده حذف شد.
+    relation = "عادی"
+    if uid in host._enemies.get(chat_id, set()):
+        relation = "دشمن ⚔️"
+    elif uid in host._friends.get(chat_id, set()):
+        relation = "دوست 🤝"
+    warn_count = host._warnings.get(chat_id, {}).get(uid, 0)
+    warn_limit = host._warn_limit.get(chat_id, getattr(config, "WARNING_LIMIT_BEFORE_MUTE", 3))
+    join_ts = host._join_times.get(chat_id, {}).get(uid)
+    join_str = time.strftime("%Y-%m-%d", time.localtime(join_ts)) if join_ts else "نامشخص"
 
     return (
         "╭━━━━━━━━━━━━━━━━━━━━━━╮\n"
@@ -1013,6 +1086,9 @@ def build_profile_card(chat_id: int, viewer_id: int, target_user) -> str:
         f"🔥 Streak: {streak['current']} روز (رکورد: {streak['best']})\n"
         f"💎 Reputation: {rep}\n"
         f"{views_line}"
+        f"🤝 رابطه: {relation}\n"
+        f"⚠️ اخطار: {warn_count}/{warn_limit}\n"
+        f"📅 عضویت از: {join_str}\n"
         f"\n{badge_line}"
         f"🏆 دستاوردها: {len(unlocked)}/{total_achievements}\n\n"
         "╰━━━━━━━━━━━━━━━━━━━━━━╯\n"

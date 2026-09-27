@@ -89,6 +89,33 @@ def check_all(chat_id: int, uid: int) -> list[str]:
         logger.warning(f"چک دستاورد Marriage ناموفق بود: {e}")
 
     try:
+        import economy_vehicle
+        vehicles = economy_vehicle.owned(chat_id, uid)
+        if vehicles:
+            to_unlock.append("econ_first_vehicle")
+            if len({v["type"] for v in vehicles}) >= 5:
+                to_unlock.append("econ_vehicle_collector")
+    except Exception as e:
+        logger.warning(f"چک دستاورد Vehicle ناموفق بود: {e}")
+
+    try:
+        import economy_business
+        businesses = economy_business.owned(chat_id, uid)
+        if businesses:
+            to_unlock.append("econ_first_business")
+            if any(b["level"] >= 5 for b in businesses):
+                to_unlock.append("econ_business_tycoon")
+    except Exception as e:
+        logger.warning(f"چک دستاورد Business ناموفق بود: {e}")
+
+    try:
+        import economy_property
+        if any(p["type"] == "mansion" for p in economy_property.owned(chat_id, uid)):
+            to_unlock.append("econ_luxury_property")
+    except Exception as e:
+        logger.warning(f"چک دستاورد Luxury Property ناموفق بود: {e}")
+
+    try:
         import economy_market
         positions = economy_market._portfolio[chat_id][uid]
         if any(p.get("qty", 0) > 0 for p in positions.values()):

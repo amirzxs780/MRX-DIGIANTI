@@ -671,6 +671,7 @@ DEFAULT_SETTINGS = {
     "economy_module_district": True,
     "economy_module_vehicle": True,
     "economy_module_business": True,
+    "economy_module_clothing": True,
     "economy_module_marriage": True,
     "economy_module_pet": True,
     "economy_module_games": True,
@@ -1970,6 +1971,48 @@ INVENTORY_BASE_CAPACITY_KG = 50.0
 ITEM_ENERGY_DRINK_RESTORE_FRACTION = 1.0   # درصد پر شدن انرژی (۱.۰ = کامل)
 ITEM_PET_SNACK_HP_RESTORE = 20
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 👔 ECONOMY CLOTHING — فاز ۱۰ (ماژول جدید؛ از صفر ساخته شده)
+# ═══════════════════════════════════════════════════════════════════════════
+# هر Slot فقط یه آیتم هم‌زمان می‌تونه توش پوشیده باشه. jacket/suit هر دو
+# توی همون Slot "outerwear" هستن (پوشیدن یکی، اون‌یکی رو خودکار درمیاره —
+# منطقی‌ست، نمی‌شه هم‌زمان کت و کت‌وشلوار پوشید).
+CLOTHING_SLOTS = ["top", "bottom", "feet", "outerwear", "eyewear", "wrist", "neck", "accessory"]
+
+CLOTHING_RARITY_FAME_BONUS = {"COMMON": 0, "UNCOMMON": 1, "RARE": 2, "EPIC": 4, "LEGENDARY": 8}
+
+CLOTHING_CATALOG = {
+    # --- top (پیراهن) ---
+    "shirt_basic":     {"name": "👕 پیراهن ساده",      "slot": "top",       "rarity": "COMMON",     "price": 200},
+    "shirt_flannel":   {"name": "👕 پیراهن چهارخونه",  "slot": "top",       "rarity": "UNCOMMON",   "price": 500},
+    "shirt_silk":      {"name": "👔 پیراهن ابریشمی",    "slot": "top",       "rarity": "RARE",       "price": 1500},
+    # --- bottom (شلوار) ---
+    "pants_jeans":     {"name": "👖 شلوار جین",         "slot": "bottom",    "rarity": "COMMON",     "price": 250},
+    "pants_chino":     {"name": "👖 شلوار چینو",        "slot": "bottom",    "rarity": "UNCOMMON",   "price": 600},
+    "pants_tailored":  {"name": "👖 شلوار دوخت‌سفارشی", "slot": "bottom",    "rarity": "RARE",       "price": 1800},
+    # --- feet (کفش) ---
+    "shoes_sneakers":  {"name": "👟 کتانی",             "slot": "feet",      "rarity": "COMMON",     "price": 300},
+    "shoes_boots":     {"name": "🥾 پوتین",             "slot": "feet",      "rarity": "UNCOMMON",   "price": 700},
+    "shoes_leather":   {"name": "👞 کفش چرم",           "slot": "feet",      "rarity": "RARE",       "price": 2000},
+    # --- outerwear (کت/کت‌وشلوار) ---
+    "jacket_denim":    {"name": "🧥 کاپشن جین",         "slot": "outerwear", "rarity": "UNCOMMON",   "price": 900},
+    "jacket_leather":  {"name": "🧥 کاپشن چرم",         "slot": "outerwear", "rarity": "RARE",       "price": 2500},
+    "suit_classic":    {"name": "🤵 کت‌وشلوار کلاسیک",  "slot": "outerwear", "rarity": "EPIC",       "price": 6000},
+    "suit_designer":   {"name": "🤵 کت‌وشلوار طراح",    "slot": "outerwear", "rarity": "LEGENDARY",  "price": 20000},
+    # --- eyewear (عینک) ---
+    "glasses_basic":   {"name": "👓 عینک ساده",         "slot": "eyewear",   "rarity": "COMMON",     "price": 150},
+    "glasses_sun":     {"name": "🕶️ عینک آفتابی",       "slot": "eyewear",   "rarity": "RARE",       "price": 1200},
+    # --- wrist (ساعت) ---
+    "watch_digital":   {"name": "⌚ ساعت دیجیتال",      "slot": "wrist",     "rarity": "COMMON",     "price": 400},
+    "watch_luxury":    {"name": "⌚ ساعت لوکس",         "slot": "wrist",     "rarity": "EPIC",       "price": 8000},
+    # --- neck (جواهرات) ---
+    "necklace_silver": {"name": "📿 گردنبند نقره",      "slot": "neck",      "rarity": "UNCOMMON",   "price": 800},
+    "necklace_gold":   {"name": "📿 گردنبند طلا",       "slot": "neck",      "rarity": "EPIC",       "price": 7000},
+    # --- accessory (اکسسوری) ---
+    "hat_cap":         {"name": "🧢 کلاه اسپرت",        "slot": "accessory", "rarity": "COMMON",     "price": 200},
+    "ring_diamond":    {"name": "💍 انگشتر الماس",      "slot": "accessory", "rarity": "LEGENDARY",  "price": 25000},
+}
+
 # ---------- ⚡ Boostهای تازه (Additive به همون config.SHOP_ITEMS فعلی؛ از همون
 # سیستم Timed Item موجود economy_engine.grant_timed_item استفاده می‌کنن،
 # نیازی به کد جدید نداشتن) ----------
@@ -2034,6 +2077,11 @@ ECONOMY_ACHIEVEMENTS = {
     "econ_first_city":       {"label": "🏙️ اولین شهر", "tier": "🥉"},
     "econ_first_pet":        {"label": "🐾 اولین پت", "tier": "🥉"},
     "econ_first_marriage":   {"label": "💍 اولین ازدواج", "tier": "🥉"},
+    "econ_first_vehicle":    {"label": "🚗 اولین خودرو", "tier": "🥉"},
+    "econ_first_business":   {"label": "🏢 اولین کسب‌وکار", "tier": "🥉"},
+    "econ_luxury_property":  {"label": "🏰 خرید ملک لوکس (عمارت)", "tier": "🥈"},
+    "econ_vehicle_collector":{"label": "🚙 جمع‌آور خودرو (۵ نوع مختلف)", "tier": "🥇"},
+    "econ_business_tycoon":  {"label": "👑 تایکون کسب‌وکار (Level ۵)", "tier": "🥇"},
     "econ_first_investment": {"label": "📈 اولین سرمایه‌گذاری", "tier": "🥉"},
     "econ_first_theft":      {"label": "🦹 اولین سرقت موفق", "tier": "🥈"},
     "econ_first_trade_win":  {"label": "💹 اولین معامله‌ی سودده", "tier": "🥈"},
@@ -2063,6 +2111,11 @@ ACHIEVEMENT_REWARDS.update({
     "econ_first_city": {"xp": 30, "coins": 200},
     "econ_first_pet": {"xp": 30, "coins": 200},
     "econ_first_marriage": {"xp": 40, "coins": 300},
+    "econ_first_vehicle": {"xp": 30, "coins": 200},
+    "econ_first_business": {"xp": 40, "coins": 300},
+    "econ_luxury_property": {"xp": 120, "coins": 1000},
+    "econ_vehicle_collector": {"xp": 150, "coins": 1500},
+    "econ_business_tycoon": {"xp": 150, "coins": 1500},
     "econ_first_investment": {"xp": 30, "coins": 200},
     "econ_first_theft": {"xp": 40, "coins": 250},
     "econ_first_trade_win": {"xp": 40, "coins": 250},
@@ -2168,6 +2221,7 @@ ECONOMY_MODULE_TOGGLES = {
     "economy_module_district":    "🗺️ منطقه‌های شهر",
     "economy_module_vehicle":     "🚗 خودرو",
     "economy_module_business":    "🏢 کسب‌وکار",
+    "economy_module_clothing":    "👔 لباس",
     "economy_module_marriage":    "💍 ازدواج",
     "economy_module_pet":         "🐾 پت",
     "economy_module_games":       "🎮 بازی‌ها",
