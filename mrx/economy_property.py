@@ -37,6 +37,7 @@ logger = logging.getLogger("economy_property")
 
 STATE_FILE = getattr(config, "ECONOMY_PROPERTY_STATE_FILE", "economy_property_state.json")
 TYPES: dict = getattr(config, "PROPERTY_TYPES", {})
+FURNITURE_CATALOG: dict = getattr(config, "FURNITURE_CATALOG", {})
 MAX_HISTORY_PER_PROPERTY = 20
 
 _save_lock = asyncio.Lock()
@@ -109,7 +110,12 @@ def current_price(chat_id: int, uid: int, ptype: str) -> int:
 
 def current_value(prop: dict) -> int:
     info = TYPES[prop["type"]]
-    return round(info["base_price"] * prop["level"])
+    base = info["base_price"] * prop["level"]
+    furniture_value = sum(
+        FURNITURE_CATALOG[key]["value_add"] * qty
+        for key, qty in prop.get("furniture", {}).items() if key in FURNITURE_CATALOG
+    )
+    return round(base + furniture_value)
 
 
 async def _collect_one(chat_id: int, uid: int, prop: dict) -> int:
@@ -230,7 +236,7 @@ async def buy_property_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     prop = {"id": _new_id(chat.id, uid), "type": key, "level": 1, "purchased_ts": time.time(),
-            "last_collect_ts": time.time(), "co_owner_id": None}
+            "last_collect_ts": time.time(), "co_owner_id": None, "furniture": {}}
     _log_history(prop, "PURCHASE", f"خرید اولیه به قیمت {price:,}")
     owned(chat.id, uid).append(prop)
     lines = [f"✅ {TYPES[key]['name']} #{prop['id']} خریداری شد!"]
@@ -549,6 +555,88 @@ async def property_history_command(update: Update, context: ContextTypes.DEFAULT
     for entry in reversed(hist[-15:]):
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(entry["ts"]))
         lines.append(f"• {ts} — {entry['event']}: {entry['note']}")
+    await message.reply_text("\n".join(lines))
+
+
+def total_theft_protection(chat_id: int, uid: int) -> float:
+    """ارتقای فاز ۷ (Furniture) × فاز ۲۱ (Crime): مجموع کاهش شانس دزدی از
+    اثاثیه‌ی امنیتیِ همه‌ی املاک این کاربر (دوربین/گاوصندوق/آژیر/درب امنیتی)،
+    با سقف FURNITURE_MAX_THEFT_PROTECTION."""
+    total = 0.0
+    for prop in owned(chat_id, uid):
+        for key, qty in prop.get("furniture", {}).items():
+            info = FURNITURE_CATALOG.get(key)
+            if info and "theft_protection" in info:
+                total += info["theft_protection"] * qty
+    return min(total, getattr(config, "FURNITURE_MAX_THEFT_PROTECTION", 0.35))
+
+
+async def buy_furniture_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """خرید اثاثیه [شناسه ملک] [کلید] — یه آیتم اثاثیه به ملکت اضافه می‌کنه
+    (ارزش ملک رو بالا می‌بره؛ اثاثیه‌ی امنیتی از دزدی هم محافظت می‌کنه)."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    import economy_admin
+    if not economy_admin.module_enabled(chat.id, "economy_module_property"):
+        await message.reply_text("اقتصاد گروه خاموشه.")
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await message.reply_text("استفاده: «خرید اثاثیه [شناسه ملک] [کلید]». با «فروشگاه اثاثیه» لیست رو ببین.")
+        return
+    uid = update.effective_user.id
+    try:
+        prop_id = int(args[0])
+    except ValueError:
+        await message.reply_text("شناسه‌ی نامعتبر.")
+        return
+    target = next((p for p in owned(chat.id, uid) if p["id"] == prop_id), None)
+    if not target:
+        await message.reply_text("همچین ملکی توی مالکیتت نیست.")
+        return
+    key = args[1].strip().lower()
+    if key not in FURNITURE_CATALOG:
+        await message.reply_text("همچین اثاثیه‌ای نیست. با «فروشگاه اثاثیه» لیست رو ببین.")
+        return
+
+    info = FURNITURE_CATALOG[key]
+    try:
+        await economy_core.remove_coins(chat.id, uid, info["price"], kind="OTHER", note=f"خرید اثاثیه {info['name']}")
+    except economy_core.InsufficientFundsError:
+        await message.reply_text(f"❌ موجودی کافی نیست. قیمت: {info['price']:,} {config.CURRENCY_NAME}")
+        return
+
+    furniture = target.setdefault("furniture", {})
+    furniture[key] = furniture.get(key, 0) + 1
+    _log_history(target, "PROPERTY", f"خرید اثاثیه {info['name']}")
+    await message.reply_text(
+        f"✅ {info['name']} به {TYPES[target['type']]['name']} #{prop_id} اضافه شد. "
+        f"(+{info['value_add']:,} به ارزش ملک)"
+    )
+    await host.save_state()
+
+
+async def furniture_shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """فروشگاه اثاثیه / /furnitureshop — لیست کامل بر اساس دسته."""
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    lines = ["🛋️ فروشگاه اثاثیه:", ""]
+    categories = {}
+    for key, info in FURNITURE_CATALOG.items():
+        categories.setdefault(info["category"], []).append((key, info))
+    labels = {"essential": "🔧 ضروری", "luxury": "✨ لوکس", "security": "🔒 امنیتی", "decorative": "🎨 تزئینی"}
+    for cat, items in categories.items():
+        lines.append(f"— {labels.get(cat, cat)} —")
+        for key, info in items:
+            prot_txt = f" — محافظت از دزدی: {info['theft_protection']*100:.0f}٪" if "theft_protection" in info else ""
+            lines.append(f"  {info['name']} — {info['price']:,} {config.CURRENCY_NAME}{prot_txt} — کلید: {key}")
+    lines.append("")
+    lines.append("خرید: «خرید اثاثیه [شناسه ملک] [کلید]»")
     await message.reply_text("\n".join(lines))
 
 

@@ -196,6 +196,12 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 🛡️ اثر بیمه‌ی هدف
     protection, max_loss = economy_security.protection_for(chat.id, target_id)
+    # ارتقای فاز ۷ (Furniture): اثاثیه‌ی امنیتی خونه‌ی هدف هم محافظت اضافه می‌ده
+    try:
+        import economy_property
+        protection = 1 - (1 - protection) * (1 - economy_property.total_theft_protection(chat.id, target_id))
+    except Exception:
+        pass
 
     level_bonus = min(
         stats["level"] * getattr(config, "THEFT_LEVEL_SUCCESS_BONUS_PER_LEVEL", 0.01),

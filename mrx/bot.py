@@ -7141,6 +7141,8 @@ PERSIAN_COMMAND_ALIASES = {
     "ملک من": economy_property.my_property_command,
     "اشتراک ملک": economy_property.share_property_command,
     "لغو اشتراک ملک": economy_property.unshare_property_command,
+    "فروشگاه اثاثیه": economy_property.furniture_shop_command,
+    "خرید اثاثیه": economy_property.buy_furniture_command,
     "انتقال ملک": economy_property.transfer_property_command,
     "فروش ملک به": economy_property.sell_property_to_command,
     "اجاره ملک": economy_property.rent_property_command,
@@ -7163,6 +7165,9 @@ PERSIAN_COMMAND_ALIASES = {
     "غذا": economy_pet.feed_command,
     "آموزش پت": economy_pet.train_command,
     "ارتقای پت": economy_pet.evolve_command,
+    "بازی با پت": economy_pet.play_command,
+    "اسم پت": economy_pet.rename_command,
+    "دکتر پت": economy_pet.heal_command,
     "فایت": economy_pet.fight_command,
 
     # فاز ۶: بازی‌ها (economy_games)
@@ -7471,6 +7476,8 @@ def main():
     app.add_handler(CommandHandler("myproperty", economy_property.my_property_command))
     app.add_handler(CommandHandler("shareproperty", economy_property.share_property_command))
     app.add_handler(CommandHandler("unshareproperty", economy_property.unshare_property_command))
+    app.add_handler(CommandHandler("furnitureshop", economy_property.furniture_shop_command))
+    app.add_handler(CommandHandler("buyfurniture", economy_property.buy_furniture_command))
     app.add_handler(CommandHandler("transferproperty", economy_property.transfer_property_command))
     app.add_handler(CommandHandler("sellpropertyto", economy_property.sell_property_to_command))
     app.add_handler(CommandHandler("rentproperty", economy_property.rent_property_command))
@@ -7490,6 +7497,9 @@ def main():
     app.add_handler(CommandHandler("feedpet", economy_pet.feed_command))
     app.add_handler(CommandHandler("trainpet", economy_pet.train_command))
     app.add_handler(CommandHandler("evolvepet", economy_pet.evolve_command))
+    app.add_handler(CommandHandler("playpet", economy_pet.play_command))
+    app.add_handler(CommandHandler("renamepet", economy_pet.rename_command))
+    app.add_handler(CommandHandler("healpet", economy_pet.heal_command))
     app.add_handler(CommandHandler("petfight", economy_pet.fight_command))
     app.add_handler(CommandHandler("dice", economy_games.dice_command))
     app.add_handler(CommandHandler("coinflip", economy_games.coinflip_command))

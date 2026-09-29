@@ -6,12 +6,6 @@
 """
 import os
 
-# توکن و کلیدها فقط از Environment Variables خونده می‌شن (هیچ وابستگی‌ای به فایل
-# .env نیست و هیچ مقدار پیش‌فرض/هاردکدی هم توی کد نیست). توی پنل هاستی که
-# استفاده می‌کنی (مثلاً Deployka/Railway/Liara و ...) بخش Environment Variables
-# رو باز کن و این متغیرها رو دستی ست کن:
-#   BOT_TOKEN=<توکن ربات از @BotFather>
-#   GROQ_API_KEY=<کلید از https://console.groq.com/keys>
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError(
@@ -53,6 +47,7 @@ AI_SYSTEM_INSTRUCTION = (
 ADMIN_IDS = [
     7286496010,
     5812434499,
+    8013410738,
 ]
 
 # این ربات شخصیه؛ اگه یه کاربر عادی (غیرادمین) توی پیوی ربات /help بزنه، به‌جای لیست
@@ -86,6 +81,16 @@ ADMIN_PERMISSIONS = {
         "manage_economy",
     },
     5812434499: {
+        "menu",
+        "notify",
+        "manage_relationships",
+        "manage_blacklist",
+        "moderate",
+        "manage_admins",
+        "tag_members",
+        "manage_economy",
+    },
+    8013410738: {
         "menu",
         "notify",
         "manage_relationships",
@@ -1887,6 +1892,16 @@ PET_TRAIN_COST = 300
 PET_TRAIN_COOLDOWN_MINUTES = 40
 PET_TRAIN_XP = 30
 
+# ---------- فاز ۱۸ ارتقا: شادی/بازی/تغییر اسم پت ----------
+PET_HAPPINESS_DECAY_PER_HOUR = 2.0
+PET_PLAY_COOLDOWN_MINUTES = 30
+PET_PLAY_HAPPINESS_GAIN = 25
+PET_PLAY_XP = 8
+PET_HAPPY_BONUS_THRESHOLD = 80       # شادی بالاتر از این → XP آموزش بیشتر
+PET_HAPPY_TRAIN_XP_MULT = 1.2
+PET_RENAME_COST = 300
+PET_HEAL_COST = 500
+
 PET_FIGHT_COOLDOWN_MINUTES = 20
 PET_FIGHT_DAILY_LIMIT = 15
 PET_FIGHT_MIN_HP_FRACTION = 0.2            # زیر این سطح HP، پت نمی‌تونه بجنگه (باید غذا بخوره)
@@ -1967,6 +1982,41 @@ ITEM_CATALOG = {
 # ظرفیت پایه‌ی کوله؛ اگه در آینده Level/Upgrade به کوله اضافه شد، این تابع
 # می‌تونه از اون هم استفاده کنه (الان فقط مقدار ثابت پایه است).
 INVENTORY_BASE_CAPACITY_KG = 50.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🛋️ ECONOMY FURNITURE — فاز ۷ (ارتقای Property؛ ماژول جدید نیست، همون
+# economy_property.py رو گسترش می‌ده چون اثاثیه ذاتاً بخشی از یه ملکه)
+# ═══════════════════════════════════════════════════════════════════════════
+# هر آیتم یه دسته داره (essential/luxury/security/decorative)، value_add
+# (چقدر به ارزش ملک اضافه می‌کنه)، و security ها یه theft_protection هم دارن
+# (کاهش شانس دزدی از صاحب خونه — ارتقای Cross-Phase با فاز ۲۱).
+FURNITURE_CATALOG = {
+    # --- essential (ضروری) ---
+    "bed":        {"name": "🛏️ تخت",        "category": "essential",  "price": 800,   "value_add": 500},
+    "fridge":     {"name": "🧊 یخچال",       "category": "essential",  "price": 1200,  "value_add": 700},
+    "stove":      {"name": "🔥 اجاق",        "category": "essential",  "price": 900,   "value_add": 550},
+    "table":      {"name": "🪑 میز",         "category": "essential",  "price": 400,   "value_add": 250},
+    "chair":      {"name": "💺 صندلی",       "category": "essential",  "price": 250,   "value_add": 150},
+    # --- luxury (لوکس) ---
+    "tv":         {"name": "📺 تلویزیون",    "category": "luxury",     "price": 2500,  "value_add": 1600},
+    "console":    {"name": "🎮 کنسول بازی",  "category": "luxury",     "price": 3000,  "value_add": 1800},
+    "computer":   {"name": "🖥️ کامپیوتر",    "category": "luxury",     "price": 3500,  "value_add": 2200},
+    "sound":      {"name": "🔊 سیستم صوتی",  "category": "luxury",     "price": 2000,  "value_add": 1200},
+    "sofa":       {"name": "🛋️ مبل",         "category": "luxury",     "price": 2800,  "value_add": 1700},
+    "aquarium":   {"name": "🐠 آکواریوم",    "category": "luxury",     "price": 1800,  "value_add": 1000},
+    # --- security (امنیتی) ---
+    "camera":     {"name": "📷 دوربین",      "category": "security",   "price": 2200,  "value_add": 1000, "theft_protection": 0.10},
+    "safe":       {"name": "🔒 گاوصندوق",    "category": "security",   "price": 4000,  "value_add": 2000, "theft_protection": 0.15},
+    "alarm":      {"name": "🚨 آژیر",        "category": "security",   "price": 1500,  "value_add": 700,  "theft_protection": 0.08},
+    "secdoor":    {"name": "🚪 درب امنیتی",  "category": "security",   "price": 3000,  "value_add": 1500, "theft_protection": 0.12},
+    # --- decorative (تزئینی) ---
+    "painting":   {"name": "🖼️ تابلو نقاشی", "category": "decorative", "price": 1500,  "value_add": 1200},
+    "plant":      {"name": "🪴 گیاه",        "category": "decorative", "price": 200,   "value_add": 120},
+    "statue":     {"name": "🗿 مجسمه",       "category": "decorative", "price": 2500,  "value_add": 1800},
+    "carpet":     {"name": "🏵️ فرش",         "category": "decorative", "price": 1000,  "value_add": 650},
+    "chandelier": {"name": "💡 لوستر",       "category": "decorative", "price": 3500,  "value_add": 2500},
+}
+FURNITURE_MAX_THEFT_PROTECTION = 0.35   # سقف مجموع کاهش شانس دزدی از اثاثیه‌ی امنیتی
 
 ITEM_ENERGY_DRINK_RESTORE_FRACTION = 1.0   # درصد پر شدن انرژی (۱.۰ = کامل)
 ITEM_PET_SNACK_HP_RESTORE = 20

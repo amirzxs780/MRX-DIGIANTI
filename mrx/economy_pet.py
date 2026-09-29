@@ -40,6 +40,7 @@ _save_lock = asyncio.Lock()
 _pets = defaultdict(dict)
 _last_feed_ts = defaultdict(dict)
 _last_train_ts = defaultdict(dict)
+_last_play_ts = defaultdict(dict)   # فاز ۱۸: بازی با پت
 # chat_id -> uid -> set(species_key) — ارتقای فاز ۲۴ (Collections): هر گونه‌ای
 # که کاربر تا حالا به فرزندی قبول کرده، حتی اگه الان اون پت رو نداشته باشه.
 _species_seen = defaultdict(lambda: defaultdict(set))
@@ -96,7 +97,21 @@ def _xp_needed(level: int) -> int:
 
 def _display_name(pet: dict) -> str:
     info = SPECIES[pet["species"]]
-    return info["evolved_name"] if pet.get("evolved") else info["name"]
+    base = info["evolved_name"] if pet.get("evolved") else info["name"]
+    nick = pet.get("nickname")
+    return f"{base} «{nick}»" if nick else base
+
+
+def _current_happiness(pet: dict) -> float:
+    """فاز ۱۸: شادی پت (۰-۱۰۰) به‌صورت Lazy با گذشت زمان کم می‌شه؛ با «بازی با پت» زیاد می‌شه."""
+    now = time.time()
+    last = pet.get("happiness_ts", now)
+    decay = getattr(config, "PET_HAPPINESS_DECAY_PER_HOUR", 2.0)
+    hours = min(max(0.0, (now - last) / 3600.0), 72)
+    value = pet.get("happiness", 70.0) - decay * hours
+    pet["happiness"] = max(0.0, min(100.0, value))
+    pet["happiness_ts"] = now
+    return pet["happiness"]
 
 
 async def _grant_xp(chat_id: int, uid: int, amount: int) -> list[str]:
@@ -228,6 +243,7 @@ async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🐾 {_display_name(pet)}",
         f"⭐ Level {pet['level']} ({pet['xp']}/{needed} XP)",
         f"❤️ HP: {hp}/{max_hp}",
+        f"😊 شادی: {round(_current_happiness(pet))}/100",
         f"⚔️ قدرت: {_power(pet):.0f}",
         f"🏆 برد/باخت: {pet['wins']}/{pet['losses']} ({rate:.0f}٪)",
     ]
@@ -307,10 +323,104 @@ async def train_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     _last_train_ts[chat.id][uid] = now
-    events = await _grant_xp(chat.id, uid, getattr(config, "PET_TRAIN_XP", 30))
-    lines = [f"📚 {_display_name(get_pet(chat.id, uid))} آموزش دید! (+{config.PET_TRAIN_XP} XP)"]
+    train_xp = getattr(config, "PET_TRAIN_XP", 30)
+    happy = _current_happiness(get_pet(chat.id, uid))
+    if happy >= getattr(config, "PET_HAPPY_BONUS_THRESHOLD", 80):
+        train_xp = round(train_xp * getattr(config, "PET_HAPPY_TRAIN_XP_MULT", 1.2))  # پت شاد بهتر یاد می‌گیره
+    events = await _grant_xp(chat.id, uid, train_xp)
+    lines = [f"📚 {_display_name(get_pet(chat.id, uid))} آموزش دید! (+{train_xp} XP)"]
     lines.extend(events)
     await message.reply_text("\n".join(lines))
+    await host.save_state()
+
+
+async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکتر پت / /healpet — برخلاف «غذا» (که کمی HP برمی‌گردونه)، این یه ویزیت
+    دامپزشکه: هزینه‌ش بیشتره ولی HP رو کامل پر می‌کنه."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    pet = get_pet(chat.id, uid)
+    if not pet:
+        await message.reply_text("پتی نداری که ببریش دکتر.")
+        return
+    hp = _current_hp(chat.id, uid)
+    max_hp = _max_hp(pet)
+    if hp >= max_hp:
+        await message.reply_text("پتت کاملاً سالمه، نیازی به دکتر نداره.")
+        return
+    cost = getattr(config, "PET_HEAL_COST", 500)
+    try:
+        await economy_core.remove_coins(chat.id, uid, cost, kind="OTHER", note="ویزیت دامپزشک")
+    except economy_core.InsufficientFundsError:
+        await message.reply_text(f"❌ موجودی کافی نیست ({cost} {config.CURRENCY_NAME}).")
+        return
+    pet["hp"] = max_hp
+    pet["last_hp_update_ts"] = time.time()
+    await message.reply_text(f"🩺 {_display_name(pet)} کامل درمان شد! ❤️ HP: {max_hp}/{max_hp}")
+    await host.save_state()
+
+
+async def play_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بازی با پت / /playpet — رایگان، Cooldown دارد؛ شادی رو زیاد می‌کنه و کمی XP می‌ده."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    pet = get_pet(chat.id, uid)
+    if not pet:
+        await message.reply_text("پتی نداری که باهاش بازی کنی.")
+        return
+    now = time.time()
+    last = _last_play_ts[chat.id].get(uid, 0)
+    cooldown = getattr(config, "PET_PLAY_COOLDOWN_MINUTES", 30) * 60
+    remaining = cooldown - (now - last)
+    if remaining > 0:
+        await message.reply_text(f"⏳ هنوز {int(remaining // 60) + 1} دقیقه‌ی دیگه تا بازی بعدی مونده.")
+        return
+    _last_play_ts[chat.id][uid] = now
+    _current_happiness(pet)  # Decay رو اول اعمال کن
+    gain = getattr(config, "PET_PLAY_HAPPINESS_GAIN", 25)
+    pet["happiness"] = min(100.0, pet["happiness"] + gain)
+    events = await _grant_xp(chat.id, uid, getattr(config, "PET_PLAY_XP", 8))
+    lines = [f"🎾 با {_display_name(pet)} بازی کردی! 😊 شادی: {round(pet['happiness'])}/100"]
+    lines.extend(events)
+    await message.reply_text("\n".join(lines))
+    await host.save_state()
+
+
+async def rename_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """اسم پت [نام] / /renamepet <name> — یه اسم دلخواه (حداکثر ۱۵ حرف) روی پتت می‌ذاره."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    pet = get_pet(chat.id, uid)
+    if not pet:
+        await message.reply_text("پتی نداری.")
+        return
+    name = " ".join(context.args or []).strip()
+    if not name:
+        await message.reply_text("استفاده: «اسم پت [نام]»")
+        return
+    if len(name) > 15 or any(c in name for c in "\n\r«»<>"):
+        await message.reply_text("❌ اسم باید حداکثر ۱۵ حرف باشه و نباید کاراکتر خاص داشته باشه.")
+        return
+    cost = getattr(config, "PET_RENAME_COST", 300)
+    try:
+        await economy_core.remove_coins(chat.id, uid, cost, kind="OTHER", note="تغییر اسم پت")
+    except economy_core.InsufficientFundsError:
+        await message.reply_text(f"❌ موجودی کافی نیست ({cost} {config.CURRENCY_NAME}).")
+        return
+    pet["nickname"] = name
+    await message.reply_text(f"✅ اسم پتت شد: {_display_name(pet)}")
     await host.save_state()
 
 
@@ -524,6 +634,7 @@ def _collect_state() -> dict:
         "pets": {str(c): dict(v) for c, v in _pets.items()},
         "last_feed_ts": {str(c): dict(v) for c, v in _last_feed_ts.items()},
         "last_train_ts": {str(c): dict(v) for c, v in _last_train_ts.items()},
+        "last_play_ts": {str(c): dict(v) for c, v in _last_play_ts.items()},
         "last_fight_ts": {str(c): dict(v) for c, v in _last_fight_ts.items()},
         "fight_daily": {str(c): {str(u): d for u, d in v.items()} for c, v in _fight_daily.items()},
         "species_seen": {str(c): {str(u): list(s) for u, s in v.items()} for c, v in _species_seen.items()},
@@ -562,6 +673,8 @@ def load_state():
         _last_train_ts[int(cid)] = {int(u): ts for u, ts in v.items()}
     for cid, v in data.get("last_fight_ts", {}).items():
         _last_fight_ts[int(cid)] = {int(u): ts for u, ts in v.items()}
+    for cid, v in data.get("last_play_ts", {}).items():
+        _last_play_ts[int(cid)] = {int(u): t for u, t in v.items()}
     for cid, v in data.get("fight_daily", {}).items():
         _fight_daily[int(cid)] = {int(u): d for u, d in v.items()}
     for cid, v in data.get("species_seen", {}).items():
