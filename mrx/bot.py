@@ -7172,6 +7172,8 @@ PERSIAN_COMMAND_ALIASES = {
 
     # فاز ۶: بازی‌ها (economy_games)
     "تاس": economy_games.dice_command,
+    "کوییز": economy_games.quiz_command,
+    "جواب": economy_games.quiz_answer_command,
     "شیر یا خط": economy_games.coinflip_command,
     "حدس": economy_games.guess_command,
     "اکس او": economy_games.xo_command,
@@ -7502,6 +7504,8 @@ def main():
     app.add_handler(CommandHandler("healpet", economy_pet.heal_command))
     app.add_handler(CommandHandler("petfight", economy_pet.fight_command))
     app.add_handler(CommandHandler("dice", economy_games.dice_command))
+    app.add_handler(CommandHandler("quiz", economy_games.quiz_command))
+    app.add_handler(CommandHandler("quizanswer", economy_games.quiz_answer_command))
     app.add_handler(CommandHandler("coinflip", economy_games.coinflip_command))
     app.add_handler(CommandHandler("guess", economy_games.guess_command))
     app.add_handler(CommandHandler("xo", economy_games.xo_command))

@@ -40,6 +40,9 @@ _xo_pending = defaultdict(dict)
 # بازی‌های فعال: chat_id -> "min_max" -> {"board":[...], "turn":uid, "p1","p2","bet","started_ts"}
 _xo_games = defaultdict(dict)
 
+# 🧠 کوییز — فاز ۲۰ ارتقا: chat_id -> uid -> {"correct","bet","expires_ts"}
+_quiz_pending = defaultdict(dict)
+
 
 def _host():
     import bot as host
@@ -421,6 +424,99 @@ async def _xo_move(update: Update, key: str, uid: int, pos: int) -> None:
 # 📋 منو
 # ---------------------------------------------------------------------------
 
+async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """کوییز [مبلغ] / /quiz <amount> — یه سوال با ۴ گزینه می‌پرسه؛ ۶۰ ثانیه
+    وقت داری با «جواب [شماره]» درست جواب بدی. برخلاف تاس/شیرخط (شانسی)،
+    این یه Skill Game واقعیه."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    import economy_admin
+    if not economy_admin.module_enabled(chat.id, "economy_module_games"):
+        await message.reply_text("اقتصاد گروه خاموشه.")
+        return
+    uid = update.effective_user.id
+    try:
+        import economy_antiabuse
+        wait = economy_antiabuse.check_and_mark(chat.id, uid)
+        if wait > 0:
+            await message.reply_text(f"⏳ یکم آروم‌تر؛ {wait:.1f} ثانیه‌ی دیگه صبر کن.")
+            return
+    except Exception as e:
+        logger.warning(f"چک Anti-Abuse سراسری ناموفق بود: {e}")
+
+    if uid in _quiz_pending[chat.id]:
+        await message.reply_text("یه سوال قبلی هنوز بی‌جوابه. اول با «جواب [شماره]» جوابش رو بده.")
+        return
+    bet = _parse_bet(context.args or [], 0, config.QUIZ_MIN_BET, config.QUIZ_MAX_BET)
+    if bet is None:
+        await message.reply_text(f"استفاده: «کوییز [مبلغ]» (بین {config.QUIZ_MIN_BET} و {config.QUIZ_MAX_BET})")
+        return
+    err = _check_cooldown_and_limit(chat.id, uid)
+    if err:
+        await message.reply_text(err)
+        return
+    try:
+        await economy_core.remove_coins(chat.id, uid, bet, kind="quiz_bet", note="شرط کوییز")
+    except economy_core.InsufficientFundsError:
+        await message.reply_text(f"❌ موجودی کافی نیست ({economy_core.get_wallet(chat.id, uid)} {config.CURRENCY_NAME}).")
+        return
+    _mark_played(chat.id, uid)
+
+    q = random.choice(config.QUIZ_QUESTIONS)
+    window = getattr(config, "QUIZ_ANSWER_WINDOW_SECONDS", 60)
+    _quiz_pending[chat.id][uid] = {"correct": q["answer"], "bet": bet, "expires_ts": time.time() + window}
+    options_txt = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
+    await message.reply_text(f"🧠 {q['q']}\n\n{options_txt}\n\n{window} ثانیه وقت داری: «جواب [شماره]»")
+    await host.save_state()
+
+
+async def quiz_answer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """جواب [شماره] / /quizanswer <n>"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    pending = _quiz_pending[chat.id].get(uid)
+    if not pending:
+        await message.reply_text("سوالی در انتظار جواب نداری. با «کوییز [مبلغ]» شروع کن.")
+        return
+    if time.time() > pending["expires_ts"]:
+        del _quiz_pending[chat.id][uid]
+        _record_result(chat.id, uid, False)
+        await message.reply_text(f"⏰ وقتت تموم شد؛ {pending['bet']} {config.CURRENCY_NAME} شرطت سوخت.")
+        await host.save_state()
+        return
+    args = context.args or []
+    if not args:
+        await message.reply_text("استفاده: «جواب [شماره]»")
+        return
+    try:
+        choice = int(args[0]) - 1
+    except ValueError:
+        await message.reply_text("شماره‌ی نامعتبر.")
+        return
+
+    del _quiz_pending[chat.id][uid]
+    bet = pending["bet"]
+    lines = []
+    if choice == pending["correct"]:
+        payout = round(bet * getattr(config, "QUIZ_WIN_MULTIPLIER", 2.2))
+        new_wallet = await economy_core.add_coins(chat.id, uid, payout, kind="quiz_win", note="برد کوییز")
+        _record_result(chat.id, uid, True)
+        lines.append(f"🎉 درست بود! +{payout} {config.CURRENCY_EMOJI} — موجودی: {new_wallet}")
+    else:
+        _record_result(chat.id, uid, False)
+        lines.append(f"😓 غلط بود. -{bet} {config.CURRENCY_EMOJI}")
+    lines += await _after_minigame(chat.id, uid)
+    await message.reply_text("\n".join(lines))
+    await host.save_state()
+
+
 async def game_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """بازی / /game — راهنما + آمار شخصی."""
     chat = update.effective_chat
@@ -455,6 +551,7 @@ def _collect_state() -> dict:
         "last_game_ts": {str(c): dict(v) for c, v in _last_game_ts.items()},
         "daily": {str(c): {str(u): d for u, d in v.items()} for c, v in _daily.items()},
         "xo_games": {str(c): dict(v) for c, v in _xo_games.items()},
+        "quiz_pending": {str(c): {str(u): p for u, p in v.items()} for c, v in _quiz_pending.items()},
     }
 
 
@@ -490,4 +587,6 @@ def load_state():
         _daily[int(cid)] = {int(u): d for u, d in v.items()}
     for cid, v in data.get("xo_games", {}).items():
         _xo_games[int(cid)] = v
+    for cid, v in data.get("quiz_pending", {}).items():
+        _quiz_pending[int(cid)] = {int(u): p for u, p in v.items()}
     logger.info("وضعیت موتور Games از فایل بارگذاری شد.")
