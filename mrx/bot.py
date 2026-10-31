@@ -162,6 +162,19 @@ _message_log = defaultdict(lambda: defaultdict(deque))
 # برای ثبت چت‌هایی که ربات توشون فعاله (برای /notify همگانی)
 _known_chats = set()
 
+# ---------- مدیریت نسخه‌ی ربات (قابل تغییر از پنل، نه فقط از config.py) ----------
+# "current"/"changelog" override‌هایی هستن که از پنل ست می‌شن و روی config.BOT_VERSION /
+# config.CHANGELOG اولویت دارن (بدون نیاز به ویرایش کد و ری‌دیپلوی برای یه آپدیت ساده‌ی نسخه).
+# همه‌ی این‌ها توی bot_state.json ذخیره و با ری‌استارت برمی‌گردن.
+_version_state: dict = {
+    "current": None,           # نسخه‌ی override‌شده از پنل؛ None یعنی از config.BOT_VERSION استفاده کن
+    "changelog": {},           # نسخه -> توضیح، override/افزوده‌ی config.CHANGELOG (این دیکشنری اولویت داره)
+    "auto_announce": True,     # وقتی موقع بالا اومدن ربات نسخه فرق کرد، خودکار به همه‌ی گروه‌ها اطلاع بده؟
+    "pin_announcement": False, # پیام اطلاع‌رسانی توی هر گروه (اگه ربات دسترسی داشته باشه) پین هم بشه؟
+    "last_announced": None,    # آخرین نسخه‌ای که واقعاً اطلاع‌رسانی شده (جلوگیری از تکرار با هر ری‌استارت)
+    "announce_log": [],        # تاریخچه‌ی ارسال‌ها (حداکثر ۲۰ تای آخر): [{"version","date","sent","failed","trigger"}]
+}
+
 # آمار فعالیت: chat_id -> user_id -> تعداد پیام
 _message_counts = defaultdict(lambda: defaultdict(int))
 # آخرین نامی که از هر کاربر دیدیم (برای نمایش توی لیست تاپ)
@@ -389,6 +402,8 @@ def _collect_state() -> dict:
         "join_leave_stats": {str(cid): dict(v) for cid, v in _join_leave_stats.items()},
         # فاز ۳: جدول نظرسنجی‌های فعال (سؤال/گزینه/رأی/تایمر/...) - قبلاً اصلاً ذخیره نمی‌شد
         "polls": poll_engine.serialize_active_polls(_polls),
+        # وضعیت کامل سیستم نسخه‌دهی (نسخه‌ی override‌شده، changelog پنل، تنظیمات اطلاع‌رسانی، لاگ)
+        "version_state": _version_state,
     }
 
 
@@ -502,6 +517,20 @@ def load_state():
                 return
         else:
             return
+
+    vstate = data.get("version_state")
+    if isinstance(vstate, dict):
+        _version_state.update(vstate)
+        # اطمینان از وجود همه‌ی کلیدهای لازم، حتی اگه state ذخیره‌شده قدیمی‌تر از یکی از آپدیت‌های بعدی این سیستم باشه
+        _version_state.setdefault("current", None)
+        _version_state.setdefault("changelog", {})
+        _version_state.setdefault("auto_announce", True)
+        _version_state.setdefault("pin_announcement", False)
+        _version_state.setdefault("last_announced", None)
+        _version_state.setdefault("announce_log", [])
+    else:
+        # سازگاری با state های قدیمی‌تر از پنل نسخه (قبلاً فقط یه کلید ساده ذخیره می‌شد)
+        _version_state["last_announced"] = data.get("bot_version_announced")
 
     _known_chats.update(data.get("known_chats", []))
 
@@ -4854,6 +4883,12 @@ _PANEL_ASK_PROMPTS = {
     "notify": "📢 متن اطلاعیه رو بفرست تا برای همه‌ی گروه‌ها ارسال بشه.",
     "welcome_text": "✏️ متن خوش‌آمدگویی این گروه رو بفرست (یا «ریست» برای پیش‌فرض).",
     "leave_text": "✏️ متن خروج این گروه رو بفرست (یا «ریست» برای پیش‌فرض).",
+    "ver_set_version": (
+        "🏷 شماره‌ی نسخه‌ی جدید رو بفرست؛ اختیاری، بعدش یه توضیح کوتاه هم بنویس.\n"
+        "مثال: 1.1.0 اضافه شدن سیستم نظرسنجی\n"
+        "برگشتن به نسخه‌ی کد (حذف override): بنویس «ریست»."
+    ),
+    "ver_set_note": "📝 توضیح نسخه‌ی فعلی رو بفرست (جایگزین توضیح قبلی می‌شه).",
 }
 
 
@@ -5105,14 +5140,7 @@ async def _execute_pending_panel_action(update: Update, context: ContextTypes.DE
         if not text:
             await _reply("متن خالی بود؛ لغو شد.")
             return
-        sent, failed = 0, 0
-        for cid in list(_known_chats):
-            try:
-                await context.bot.send_message(chat_id=cid, text=f"📢 اطلاعیه:\n{text}")
-                sent += 1
-            except Exception as e:
-                logger.warning(f"ارسال به چت {cid} ناموفق بود: {e}")
-                failed += 1
+        sent, failed = await _broadcast_to_known_chats(context.bot, f"📢 اطلاعیه:\n{text}")
         await _reply(f"ارسال شد به {sent} چت. ({failed} مورد ناموفق)")
 
     elif action in ("welcome_text", "leave_text"):
@@ -5131,6 +5159,45 @@ async def _execute_pending_panel_action(update: Update, context: ContextTypes.DE
         store[chat_id] = text
         await _reply(f"✅ متن {label} این گروه تنظیم شد. پیش‌نمایش:\n\n{preview}")
         await save_state()
+
+    elif action == "ver_set_version":
+        if not has_permission(user.id, "manage_version"):
+            await _reply("این اکشن فقط برای ادمین‌های مجازه.")
+            return
+        text = (message.text or "").strip()
+        if not text:
+            await _reply("متن خالی بود؛ لغو شد.")
+            return
+        if text in ("ریست", "reset"):
+            _version_state["current"] = None
+            await _reply(f"✅ override نسخه حذف شد؛ الان از config.BOT_VERSION استفاده می‌شه ({config.BOT_VERSION}).")
+            await save_state()
+            return
+        tokens = text.split(maxsplit=1)
+        new_version = tokens[0]
+        note = tokens[1].strip() if len(tokens) > 1 else None
+        _version_state["current"] = new_version
+        if note:
+            _version_state["changelog"][new_version] = note
+        await save_state()
+        await _reply(
+            f"✅ نسخه روی {new_version} تنظیم شد"
+            + (f" با توضیح:\n📝 {note}" if note else " (بدون توضیح).")
+        )
+        await _announce_version_update_if_needed(context.bot)
+
+    elif action == "ver_set_note":
+        if not has_permission(user.id, "manage_version"):
+            await _reply("این اکشن فقط برای ادمین‌های مجازه.")
+            return
+        text = (message.text or "").strip()
+        if not text:
+            await _reply("متن خالی بود؛ لغو شد.")
+            return
+        current = _effective_version()
+        _version_state["changelog"][current] = text
+        await save_state()
+        await _reply(f"✅ توضیح نسخه‌ی {current} ثبت شد:\n📝 {text}")
 
 
 async def pending_panel_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5171,6 +5238,7 @@ def _build_main_menu_markup(chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("📖 راهنمای دستورات", callback_data="menu_help"),
         ]
     )
+    rows.append([InlineKeyboardButton(f"🏷 نسخه: {_effective_version()}", callback_data="menu_version")])
     rows.append([InlineKeyboardButton("❌ بستن", callback_data="menu_close")])
     return InlineKeyboardMarkup(rows)
 
@@ -6322,6 +6390,7 @@ def _menu_header_text(chat_id: int) -> str:
         f"┃  👥 اعضا        {members} نفر\n"
         f"┃  🛡 امنیت       {security}%\n"
         f"┃  🧠 {ai_mode}\n"
+        f"┃  🏷 نسخه        v{config.BOT_VERSION}\n"
         "╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
         f"🤝 دوست: {len(_friends[chat_id])}  •  ⚔️ دشمن: {len(_enemies[chat_id])}\n\n"
         "⚡ یه بخش رو برای مدیریت انتخاب کن:"
@@ -6570,6 +6639,81 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if query.data == "menu_status":
         await query.answer()
         await query.edit_message_text(_group_status_text(chat_id), reply_markup=_build_help_markup())
+        return
+
+    if query.data == "menu_version":
+        await query.answer()
+        await query.edit_message_text(_version_panel_text(), reply_markup=_version_panel_markup())
+        return
+
+    if query.data == "ver:toggle_auto":
+        if not has_permission(user.id, "manage_version"):
+            await query.answer("این بخش فقط برای ادمین‌های مجاز به «manage_version»ست.", show_alert=True)
+            return
+        _version_state["auto_announce"] = not _version_state["auto_announce"]
+        await query.answer()
+        await query.edit_message_text(_version_panel_text(), reply_markup=_version_panel_markup())
+        await save_state()
+        return
+
+    if query.data == "ver:toggle_pin":
+        if not has_permission(user.id, "manage_version"):
+            await query.answer("این بخش فقط برای ادمین‌های مجاز به «manage_version»ست.", show_alert=True)
+            return
+        _version_state["pin_announcement"] = not _version_state["pin_announcement"]
+        await query.answer()
+        await query.edit_message_text(_version_panel_text(), reply_markup=_version_panel_markup())
+        await save_state()
+        return
+
+    if query.data == "ver:resend":
+        if not has_permission(user.id, "manage_version"):
+            await query.answer("این بخش فقط برای ادمین‌های مجاز به «manage_version»ست.", show_alert=True)
+            return
+        await query.answer()
+        await query.edit_message_text(
+            f"📢 اطلاعیه‌ی نسخه‌ی {_effective_version()} دوباره به {len(_known_chats)} گروه فرستاده بشه؟",
+            reply_markup=_version_resend_confirm_markup(),
+        )
+        return
+
+    if query.data == "ver:resend_confirm":
+        if not has_permission(user.id, "manage_version"):
+            await query.answer("این بخش فقط برای ادمین‌های مجاز به «manage_version»ست.", show_alert=True)
+            return
+        await query.answer("در حال ارسال...")
+        current = _effective_version()
+        sent, failed = await _broadcast_to_known_chats(
+            context.bot, _version_announce_text(current), pin=_version_state["pin_announcement"]
+        )
+        _log_version_announce(current, sent, failed, trigger="manual")
+        await save_state()
+        await query.edit_message_text(
+            f"✅ اطلاعیه‌ی نسخه‌ی {current} به {sent} چت ارسال شد. ({failed} مورد ناموفق)\n\n"
+            + _version_panel_text(),
+            reply_markup=_version_panel_markup(),
+        )
+        return
+
+    if query.data == "ver:log":
+        await query.answer()
+        await query.edit_message_text(_version_log_text(), reply_markup=_version_log_markup())
+        return
+
+    if query.data == "ver:changelog":
+        await query.answer()
+        await query.edit_message_text(_version_changelog_list_text(), reply_markup=_version_changelog_list_markup())
+        return
+
+    if query.data.startswith("ver:delchg:"):
+        if not has_permission(user.id, "manage_version"):
+            await query.answer("این بخش فقط برای ادمین‌های مجاز به «manage_version»ست.", show_alert=True)
+            return
+        target_version = query.data.split(":", 2)[2]
+        _version_state["changelog"].pop(target_version, None)
+        await query.answer("حذف شد.")
+        await save_state()
+        await query.edit_message_text(_version_changelog_list_text(), reply_markup=_version_changelog_list_markup())
         return
 
     if query.data == "noop":
@@ -6913,6 +7057,27 @@ async def dm_ai_reply_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # ---------- ۳) اطلاع‌رسانی ----------
 
+async def _broadcast_to_known_chats(bot, text: str, pin: bool = False) -> tuple[int, int]:
+    """متن رو به تمام چت‌های شناخته‌شده می‌فرسته. (sent, failed) رو برمی‌گردونه.
+    اگه pin=True باشه، بعد از ارسال توی هر چت سعی می‌کنه پیام رو پین کنه؛ نبود دسترسی
+    پین توی یه چت خاص فقط لاگ می‌شه و جلوی ارسال/شمارش به بقیه رو نمی‌گیره."""
+    sent, failed = 0, 0
+    for chat_id in list(_known_chats):
+        try:
+            msg = await bot.send_message(chat_id=chat_id, text=text)
+            sent += 1
+        except Exception as e:
+            logger.warning(f"ارسال به چت {chat_id} ناموفق بود: {e}")
+            failed += 1
+            continue
+        if pin:
+            try:
+                await bot.pin_chat_message(chat_id=chat_id, message_id=msg.message_id, disable_notification=True)
+            except Exception as e:
+                logger.warning(f"پین کردن اطلاعیه توی چت {chat_id} ناموفق بود (دسترسی پین نداره؟): {e}")
+    return sent, failed
+
+
 async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not has_permission(user.id, "notify"):
@@ -6926,17 +7091,211 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    sent, failed = 0, 0
-    for chat_id in list(_known_chats):
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=f"📢 اطلاعیه:\n{text}")
-            sent += 1
-        except Exception as e:
-            logger.warning(f"ارسال به چت {chat_id} ناموفق بود: {e}")
-            failed += 1
+    sent, failed = await _broadcast_to_known_chats(context.bot, f"📢 اطلاعیه:\n{text}")
 
     await update.effective_message.reply_text(
         f"ارسال شد به {sent} چت. ({failed} مورد ناموفق)"
+    )
+
+
+# ---------- نسخه‌ی ربات (اطلاع‌رسانیِ خودکارِ آپدیت + مدیریت از پنل) ----------
+
+def _effective_version() -> str:
+    """نسخه‌ای که الان واقعاً حساب می‌شه: اگه از پنل override شده باشه همون، وگرنه config.BOT_VERSION."""
+    return _version_state["current"] or config.BOT_VERSION
+
+
+def _effective_changelog() -> dict:
+    """config.CHANGELOG (سطح کد) + override/افزوده‌های پنل (سطح اجرا)، که دومی اولویت داره."""
+    merged = dict(config.CHANGELOG)
+    merged.update(_version_state["changelog"])
+    return merged
+
+
+def _version_changelog_line(version: str) -> str | None:
+    note = _effective_changelog().get(version)
+    return str(note).strip() if note and str(note).strip() else None
+
+
+def _version_announce_text(version: str) -> str:
+    lines = [f"🚀 پنل آپدیت شد به نسخه‌ی {version}"]
+    note = _version_changelog_line(version)
+    if note:
+        lines.append(f"\n📝 {note}")
+    return "\n".join(lines)
+
+
+def _version_info_text() -> str:
+    current = _effective_version()
+    lines = [f"🏷 نسخه‌ی فعلی پنل: {current}"]
+    note = _version_changelog_line(current)
+    if note:
+        lines.append(f"📝 {note}")
+    # چند نسخه‌ی اخیر رو هم (اگه توی changelog باشن) به‌عنوان تاریخچه نشون بده
+    changelog = _effective_changelog()
+    history = [v for v in changelog.keys() if v != current]
+    if history:
+        lines.append("\n📜 نسخه‌های قبلی:")
+        for v in history[-5:][::-1]:
+            lines.append(f"• {v} — {changelog[v]}")
+    return "\n".join(lines)
+
+
+async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(_version_info_text())
+
+
+def _log_version_announce(version: str, sent: int, failed: int, trigger: str):
+    """آخرین ۲۰ تا ارسال اطلاعیه‌ی نسخه رو برای نمایش توی پنل (📜 لاگ ارسال‌ها) نگه می‌داره."""
+    _version_state["announce_log"].append(
+        {
+            "version": version,
+            "date": _now_local().strftime("%Y-%m-%d %H:%M"),
+            "sent": sent,
+            "failed": failed,
+            "trigger": trigger,  # "auto" (موقع بالا اومدن ربات) یا "manual" (دکمه‌ی ارسال مجدد توی پنل)
+        }
+    )
+    _version_state["announce_log"] = _version_state["announce_log"][-20:]
+
+
+async def _announce_version_update_if_needed(bot):
+    """اگه نسخه‌ی فعلی از آخرین نسخه‌ی اطلاع‌رسانی‌شده فرق داشته باشه، یه پیام «آپدیت شد»
+    به همه‌ی گروه‌ها می‌فرسته - دقیقاً یه بار، نه با هر ری‌استارت. اولین اجرای ربات (وقتی
+    هنوز هیچ نسخه‌ای ذخیره نشده) چیزی نمی‌فرسته، فقط نسخه‌ی فعلی رو به‌عنوان نقطه‌ی شروع
+    ذخیره می‌کنه تا بعدش فقط آپدیت‌های واقعی اطلاع داده بشن. اگه اطلاع‌رسانی خودکار از
+    پنل خاموش شده باشه، نسخه‌ی جدید فقط بی‌سروصدا ثبت می‌شه (بدون ارسال پیام)."""
+    current = _effective_version()
+    if _version_state["last_announced"] == current:
+        return
+    is_first_run = _version_state["last_announced"] is None
+    if not is_first_run and _version_state["auto_announce"] and _known_chats:
+        sent, failed = await _broadcast_to_known_chats(
+            bot, _version_announce_text(current), pin=_version_state["pin_announcement"]
+        )
+        _log_version_announce(current, sent, failed, trigger="auto")
+        logger.info(f"اطلاع‌رسانی آپدیت نسخه‌ی {current} به {sent} چت ارسال شد ({failed} ناموفق).")
+    _version_state["last_announced"] = current
+    try:
+        await save_state()
+    except Exception as e:
+        logger.warning(f"ذخیره‌ی نسخه‌ی اطلاع‌رسانی‌شده ناموفق بود: {e}")
+
+
+# ---------- پنل مدیریت نسخه (دکمه‌ی 🏷 نسخه توی /menu) ----------
+
+def _version_panel_text() -> str:
+    current = _effective_version()
+    note = _version_changelog_line(current)
+    auto_on = _version_state["auto_announce"]
+    pin_on = _version_state["pin_announcement"]
+    last = _version_state["last_announced"]
+    lines = [
+        "╭━━〔 🏷 مدیریت نسخه 〕━━╮",
+        f"┃ نسخه‌ی فعلی: {current}",
+        f"┃ آخرین نسخه‌ی اطلاع‌رسانی‌شده: {last or '—'}",
+        f"┃ اطلاع‌رسانی خودکار: {'🟢 روشن' if auto_on else '🔴 خاموش'}",
+        f"┃ پین کردن اطلاعیه: {'🟢 روشن' if pin_on else '🔴 خاموش'}",
+        f"┃ گروه‌های شناخته‌شده: {len(_known_chats)}",
+        "╰━━━━━━━━━━━━━━━━━━━━━━╯",
+    ]
+    if note:
+        lines.append(f"\n📝 توضیح نسخه‌ی فعلی:\n{note}")
+    else:
+        lines.append("\n📝 این نسخه هنوز توضیحی نداره.")
+    lines.append(
+        "\n⚡ از دکمه‌های زیر نسخه/توضیح رو عوض کن، اطلاعیه رو دوباره بفرست، یا "
+        "اطلاع‌رسانی خودکار/پین رو روشن‌خاموش کن."
+    )
+    return "\n".join(lines)
+
+
+def _version_panel_markup() -> InlineKeyboardMarkup:
+    auto_on = _version_state["auto_announce"]
+    pin_on = _version_state["pin_announcement"]
+    rows = [
+        [
+            InlineKeyboardButton("✏️ تغییر نسخه", callback_data="ask:ver_set_version"),
+            InlineKeyboardButton("📝 ویرایش توضیح", callback_data="ask:ver_set_note"),
+        ],
+        [InlineKeyboardButton("📢 ارسال مجدد اطلاعیه", callback_data="ver:resend")],
+        [
+            InlineKeyboardButton(
+                f"🔔 اطلاع‌رسانی خودکار: {'روشن' if auto_on else 'خاموش'}",
+                callback_data="ver:toggle_auto",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"📌 پین اطلاعیه: {'روشن' if pin_on else 'خاموش'}",
+                callback_data="ver:toggle_pin",
+            )
+        ],
+        [
+            InlineKeyboardButton("📜 لاگ ارسال‌ها", callback_data="ver:log"),
+            InlineKeyboardButton("🗂 توضیحات ثبت‌شده", callback_data="ver:changelog"),
+        ],
+        [
+            InlineKeyboardButton("🔙 بازگشت", callback_data="menu_back"),
+            InlineKeyboardButton("❌ بستن", callback_data="menu_close"),
+        ],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def _version_log_text() -> str:
+    log = _version_state["announce_log"]
+    if not log:
+        return "📜 هنوز هیچ اطلاعیه‌ای ارسال نشده."
+    lines = ["📜 آخرین ارسال‌های اطلاعیه‌ی نسخه (جدیدترین اول):\n"]
+    trigger_label = {"auto": "خودکار (ری‌استارت)", "manual": "دستی (پنل)"}
+    for entry in reversed(log[-10:]):
+        lines.append(
+            f"• v{entry['version']} — {entry['date']} — "
+            f"{trigger_label.get(entry['trigger'], entry['trigger'])} — "
+            f"✅ {entry['sent']} / ❌ {entry['failed']}"
+        )
+    return "\n".join(lines)
+
+
+def _version_log_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🔙 بازگشت", callback_data="menu_version")]]
+    )
+
+
+def _version_changelog_list_text() -> str:
+    overrides = _version_state["changelog"]
+    if not overrides:
+        return (
+            "🗂 هنوز هیچ توضیحی از پنل ثبت نشده.\n"
+            "(توضیح‌های داخل کد، از config.py، همیشه هستن و از اینجا قابل حذف نیستن - "
+            "فقط چیزهایی که خودت از دکمه‌ی «📝 ویرایش توضیح» اضافه کردی اینجا لیست می‌شن.)"
+        )
+    lines = ["🗂 توضیحات ثبت‌شده از پنل (قابل حذف):\n"]
+    for v, note in overrides.items():
+        lines.append(f"• {v} — {note}")
+    return "\n".join(lines)
+
+
+def _version_changelog_list_markup() -> InlineKeyboardMarkup:
+    overrides = _version_state["changelog"]
+    rows = [
+        [InlineKeyboardButton(f"🗑 حذف توضیح {v}", callback_data=f"ver:delchg:{v}")]
+        for v in overrides.keys()
+    ]
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="menu_version")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _version_resend_confirm_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ بله، بفرست", callback_data="ver:resend_confirm"),
+                InlineKeyboardButton("❌ نه", callback_data="menu_version"),
+            ]
+        ]
     )
 
 
@@ -7002,6 +7361,7 @@ async def _post_init(application: Application):
     global _bot_instance
     _bot_instance = application.bot
     application.bot_data["periodic_save_task"] = asyncio.create_task(_periodic_save_loop())
+    await _announce_version_update_if_needed(application.bot)
 
 
 async def _post_shutdown(application: Application):
@@ -7021,6 +7381,8 @@ PERSIAN_COMMAND_ALIASES = {
     # عمومی
     "شروع": start_command,
     "راهنما": help_command,
+    "نسخه": version_command,
+    "ورژن": version_command,
     "آمار": stats_command,
     "فعال ترین ها": top_command,
     "آمار گروه": group_stats_command,
@@ -7403,6 +7765,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("notify", notify_command))
+    app.add_handler(CommandHandler("version", version_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("top", top_command))
     app.add_handler(CommandHandler("groupstats", group_stats_command))
