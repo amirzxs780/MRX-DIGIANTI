@@ -104,6 +104,17 @@ def module_off_message(chat_id: int, key: str) -> str:
     return f"🔒 بخش «{label}» رو ادمین این گروه خاموش کرده (بقیه‌ی بخش‌های اقتصاد مشکلی ندارن)."
 
 
+async def set_module_enabled(chat_id: int, key: str, enabled: bool, actor_uid: int | None = None) -> None:
+    """روشن/خاموش‌کردن واقعی یه ماژول - لاگ می‌گیره و ذخیره می‌کنه. منبع واحد برای
+    هم دستور متنی («ماژول‌های اقتصاد...») و هم دکمه‌های پنل ویژه‌ی ادمین، که جلوی
+    دوشاخه‌شدن منطق رو می‌گیره."""
+    host = _host()
+    host._chat_settings[chat_id][key] = enabled
+    if actor_uid is not None:
+        _audit(chat_id, actor_uid, "MODULE_TOGGLE", note=f"{key} -> {'روشن' if enabled else 'خاموش'}")
+    await host.save_state()
+
+
 def module_enabled(chat_id: int, key: str) -> bool:
     """چک ترکیبی: هم economy_enabled سراسری، هم Toggle اختصاصی این ماژول.
     ماژول‌هایی که Key ندارن (چون Toggle مستقل ندارن) همیشه True حساب می‌شن."""
@@ -174,10 +185,8 @@ async def economy_modules_command(update: Update, context: ContextTypes.DEFAULT_
             await message.reply_text(f"همچین ماژولی نیست. گزینه‌ها: {names}")
         return
 
-    host._chat_settings[chat.id][key] = (state_word == "روشن")
-    _audit(chat.id, update.effective_user.id, "MODULE_TOGGLE", note=f"{key} -> {state_word}")
+    await set_module_enabled(chat.id, key, state_word == "روشن", actor_uid=update.effective_user.id)
     await message.reply_text(f"✅ {TOGGLES[key]} {'روشن' if state_word == 'روشن' else 'خاموش'} شد.")
-    await host.save_state()
 
 
 # ---------------------------------------------------------------------------

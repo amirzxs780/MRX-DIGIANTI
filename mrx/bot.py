@@ -5875,13 +5875,34 @@ _SHOP_PRICE_STEP = 10
 _SHOP_PRICE_FLOOR = 5
 
 
-def _econ_admin_header(chat_id: int) -> str:
+def _econ_admin_header(chat_id: int, view: str = "main") -> str:
     title = _chat_titles.get(chat_id, str(chat_id))
+    box_top = "╭━━〔 🛠 ADMIN CENTER 〕━━╮\n"
+    box_group = f"┃ گروه: {title}\n"
+    box_bottom = "╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
+
+    if view == "shop":
+        return (
+            box_top + "┃ 🛒 مدیریت فروشگاه\n" + box_group + box_bottom +
+            "با ➖ / ➕ قیمت هر کالا رو تنظیم کن، و با دکمه‌ی زیرش می‌تونی نمایان/مخفیش کنی."
+        )
+    if view == "stats":
+        return (
+            box_top + "┃ 📊 آمار زنده‌ی اقتصاد\n" + box_group + box_bottom +
+            "یه نمای کلی از وضعیت مالی گروه، به‌روز و لحظه‌ای."
+        )
+    if view == "quick":
+        return (
+            box_top + "┃ 🎁 اقدامات سریع\n" + box_group + box_bottom +
+            "کارهای پرتکرار رو با یک تَپ انجام بده. اقدامات مالی قبل از اجرا ازت تأیید می‌گیرن."
+        )
+    if view == "modules":
+        return (
+            box_top + "┃ 🔌 روشن/خاموش‌کردن بخش‌ها\n" + box_group + box_bottom +
+            "هر بخش اقتصاد رو جدا روشن یا خاموش کن. اگه کلید سراسری خاموش باشه، کل اقتصاد گروه از کار می‌افته."
+        )
     return (
-        "╭━━〔 🛠 ADMIN CENTER 〕━━╮\n"
-        "┃ اقتصاد • XP • قرعه‌کشی\n"
-        f"┃ گروه: {title}\n"
-        "╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
+        box_top + "┃ اقتصاد • XP • قرعه‌کشی\n" + box_group + box_bottom +
         "با دکمه‌های ➖ / ➕ مقدارها رو تنظیم کن.\n"
         "برای سکه/XP/لول یک نفر خاص یا همه‌ی اعضا با هم، از «راهنمای دستورات دستی» استفاده کن."
     )
@@ -5894,6 +5915,8 @@ def _build_econ_admin_markup(chat_id: int, view: str = "main") -> InlineKeyboard
         return _build_econ_stats_markup(chat_id)
     if view == "quick":
         return _build_econ_quick_markup(chat_id)
+    if view == "modules":
+        return _build_econ_modules_markup(chat_id)
 
     es = _econ_settings[chat_id]
     rows = []
@@ -5910,6 +5933,11 @@ def _build_econ_admin_markup(chat_id: int, view: str = "main") -> InlineKeyboard
         [
             InlineKeyboardButton("🛒 مدیریت فروشگاه", callback_data="econv:shop"),
             InlineKeyboardButton("📊 آمار اقتصاد گروه", callback_data="econv:stats"),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton("🔌 روشن/خاموش‌کردن بخش‌ها", callback_data="econv:modules"),
         ]
     )
     rows.append(
@@ -5951,12 +5979,19 @@ def _build_econ_stats_markup(chat_id: int) -> InlineKeyboardMarkup:
     wallet = _wallet[chat_id]
     total_coins = sum(wallet.values())
     members_with_coins = sum(1 for v in wallet.values() if v > 0)
-    top = sorted(wallet.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    active_modules = sum(1 for k in economy_admin.TOGGLES if get_setting(chat_id, k))
+    total_modules = len(economy_admin.TOGGLES)
+    global_state = "🟢 روشن" if get_setting(chat_id, "economy_enabled") else "🔴 خاموش"
     rows = [
+        [InlineKeyboardButton(f"🔌 اقتصاد سراسری: {global_state}", callback_data="noop")],
+        [InlineKeyboardButton(f"🧩 بخش‌های روشن: {active_modules} از {total_modules}", callback_data="noop")],
         [InlineKeyboardButton(f"💰 مجموع سکه‌ی در گردش: {total_coins} {config.CURRENCY_NAME}", callback_data="noop")],
         [InlineKeyboardButton(f"👥 اعضای دارای موجودی: {members_with_coins} نفر", callback_data="noop")],
         [InlineKeyboardButton(f"👥 کل اعضای شناخته‌شده: {len(_known_members[chat_id])} نفر", callback_data="noop")],
     ]
+    positive = [(uid, bal) for uid, bal in wallet.items() if bal > 0]
+    top = sorted(positive, key=lambda kv: kv[1], reverse=True)[:5]
+    bottom = sorted(positive, key=lambda kv: kv[1])[:5]
     if top:
         rows.append([InlineKeyboardButton("🏆 پولدارترین اعضا:", callback_data="noop")])
         for uid, bal in top:
@@ -5964,17 +5999,55 @@ def _build_econ_stats_markup(chat_id: int) -> InlineKeyboardMarkup:
             rows.append([InlineKeyboardButton(f"{name}: {bal} {config.CURRENCY_NAME}", callback_data="noop")])
     else:
         rows.append([InlineKeyboardButton("هنوز هیچکس سکه‌ای نداره.", callback_data="noop")])
+    if len(positive) > 5:
+        rows.append([InlineKeyboardButton("📉 کم‌موجودی‌ترین اعضا (با موجودی مثبت):", callback_data="noop")])
+        for uid, bal in bottom:
+            name = _user_display_names.get(uid, str(uid))
+            rows.append([InlineKeyboardButton(f"{name}: {bal} {config.CURRENCY_NAME}", callback_data="noop")])
     rows.append([InlineKeyboardButton("🔙 بازگشت به پنل اقتصاد", callback_data="econv:main")])
     return InlineKeyboardMarkup(rows)
 
 
 def _build_econ_quick_markup(chat_id: int) -> InlineKeyboardMarkup:
+    members = len(_known_members[chat_id])
     rows = [
-        [InlineKeyboardButton("🎁 جایزه‌ی +۲۰ به همه‌ی اعضا", callback_data="econquick:bonus20")],
-        [InlineKeyboardButton("🎁 جایزه‌ی +۵۰ به همه‌ی اعضا", callback_data="econquick:bonus50")],
-        [InlineKeyboardButton("🎉 شروع قرعه کشی سریع (۵ دقیقه)", callback_data="econquick:lottery5")],
+        [InlineKeyboardButton(f"🎁 جایزه‌ی +۲۰ به همه ({members} نفر)", callback_data="econquick:ask:bonus20")],
+        [InlineKeyboardButton(f"🎁 جایزه‌ی +۵۰ به همه ({members} نفر)", callback_data="econquick:ask:bonus50")],
+        [InlineKeyboardButton(f"🎁 جایزه‌ی +۱۰۰ به همه ({members} نفر)", callback_data="econquick:ask:bonus100")],
+        [
+            InlineKeyboardButton("🎉 قرعه‌کشی ۵ دقیقه‌ای", callback_data="econquick:lottery5"),
+            InlineKeyboardButton("🎉 ۱۵ دقیقه‌ای", callback_data="econquick:lottery15"),
+            InlineKeyboardButton("🎉 ۳۰ دقیقه‌ای", callback_data="econquick:lottery30"),
+        ],
         [InlineKeyboardButton("🔙 بازگشت به پنل اقتصاد", callback_data="econv:main")],
     ]
+    return InlineKeyboardMarkup(rows)
+
+
+def _build_econ_modules_markup(chat_id: int) -> InlineKeyboardMarkup:
+    global_on = get_setting(chat_id, "economy_enabled")
+    global_label = ("🟢 کل اقتصاد: روشنه (بزن خاموش کن)" if global_on
+                    else "🔴 کل اقتصاد: خاموشه (بزن روشن کن)")
+    rows = [[InlineKeyboardButton(global_label, callback_data="econmod:__global__")]]
+
+    keys = list(economy_admin.TOGGLES.items())
+    row = []
+    for key, label in keys:
+        on = get_setting(chat_id, key)
+        icon = "✅" if on else "⛔"
+        row.append(InlineKeyboardButton(f"{icon} {label}", callback_data=f"econmod:{key}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+
+    if not global_on:
+        rows.append([InlineKeyboardButton(
+            "⚠️ چون کل اقتصاد خاموشه، این بخش‌ها فعلاً هرچی باشن بی‌اثرن", callback_data="noop"
+        )])
+
+    rows.append([InlineKeyboardButton("🔙 بازگشت به پنل اقتصاد", callback_data="econv:main")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -5986,7 +6059,7 @@ async def _handle_econ_admin_callback(query, chat_id: int, data: str):
     if prefix == "econv":
         view = parts[1] if len(parts) > 1 else "main"
         await query.answer()
-        await query.edit_message_text(_econ_admin_header(chat_id), reply_markup=_build_econ_admin_markup(chat_id, view))
+        await query.edit_message_text(_econ_admin_header(chat_id, view), reply_markup=_build_econ_admin_markup(chat_id, view))
         return
 
     if prefix == "econset":
@@ -6068,24 +6141,63 @@ async def _handle_econ_admin_callback(query, chat_id: int, data: str):
         await save_state()
         return
 
+    if prefix == "econmod":
+        key = parts[1] if len(parts) > 1 else ""
+        actor = query.from_user.id if query.from_user else None
+        if key == "__global__":
+            new_state = not get_setting(chat_id, "economy_enabled")
+            _chat_settings[chat_id]["economy_enabled"] = new_state
+            await save_state()
+            await query.answer("🟢 کل اقتصاد روشن شد." if new_state else "🔴 کل اقتصاد خاموش شد.")
+            await query.edit_message_reply_markup(reply_markup=_build_econ_modules_markup(chat_id))
+            return
+        if key not in economy_admin.TOGGLES:
+            await query.answer()
+            return
+        new_state = not get_setting(chat_id, key)
+        await economy_admin.set_module_enabled(chat_id, key, new_state, actor_uid=actor)
+        label = economy_admin.TOGGLES[key]
+        await query.answer(f"✅ {label} روشن شد." if new_state else f"⛔ {label} خاموش شد.")
+        await query.edit_message_reply_markup(reply_markup=_build_econ_modules_markup(chat_id))
+        return
+
     if prefix == "econquick":
         action = parts[1] if len(parts) > 1 else ""
         members = _known_members[chat_id]
-        if action in ("bonus20", "bonus50"):
-            amount = 20 if action == "bonus20" else 50
+        bonus_amounts = {"bonus20": 20, "bonus50": 50, "bonus100": 100}
+
+        if action == "ask" and len(parts) > 2 and parts[2] in bonus_amounts:
+            amount = bonus_amounts[parts[2]]
+            await query.answer()
+            confirm_rows = [[
+                InlineKeyboardButton("✅ بله، بده", callback_data=f"econquick:{parts[2]}"),
+                InlineKeyboardButton("✖️ انصراف", callback_data="econv:quick"),
+            ]]
+            await query.edit_message_text(
+                f"مطمئنی می‌خوای به هر {len(members)} عضو شناخته‌شده‌ی این گروه، "
+                f"{amount} {config.CURRENCY_NAME} جایزه بدی؟ (مجموعاً {amount * len(members)} {config.CURRENCY_NAME})",
+                reply_markup=InlineKeyboardMarkup(confirm_rows),
+            )
+            return
+
+        if action in bonus_amounts:
+            amount = bonus_amounts[action]
             for uid in members:
                 await economy_core.add_coins(chat_id, uid, amount, kind="EVENT", note="econquick bonus")
             await query.answer(f"✅ به {len(members)} نفر، {amount} {config.CURRENCY_NAME} داده شد.", show_alert=True)
             await save_state()
+            await query.edit_message_text(_econ_admin_header(chat_id, "quick"), reply_markup=_build_econ_quick_markup(chat_id))
             return
-        if action == "lottery5":
+
+        lottery_durations = {"lottery5": 5, "lottery15": 15, "lottery30": 30}
+        if action in lottery_durations:
             if chat_id in _lotteries:
                 await query.answer("همین الان یه قرعه‌کشی فعاله توی این گروه.", show_alert=True)
                 return
-            minutes = 5
+            minutes = lottery_durations[action]
             try:
-                bot = query.get_bot()
-                sent = await bot.send_message(chat_id=chat_id, text=_lottery_text(None, 0, minutes))
+                tg_bot = query.get_bot()
+                sent = await tg_bot.send_message(chat_id=chat_id, text=_lottery_text(None, 0, minutes))
                 try:
                     await sent.edit_reply_markup(reply_markup=_lottery_keyboard(sent.message_id))
                 except Exception as e:
@@ -6096,7 +6208,7 @@ async def _handle_econ_admin_callback(query, chat_id: int, data: str):
                     "participants": set(),
                     "prize": None,
                 }
-                await query.answer("🎉 قرعه‌کشی شروع شد.")
+                await query.answer(f"🎉 قرعه‌کشی {minutes} دقیقه‌ای شروع شد.")
             except Exception as e:
                 logger.warning(f"شروع قرعه‌کشی سریع از پنل ناموفق بود: {e}")
                 await query.answer("مشکلی پیش اومد.", show_alert=True)
