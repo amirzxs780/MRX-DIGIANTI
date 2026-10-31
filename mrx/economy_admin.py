@@ -13,6 +13,7 @@ Toggle مستقل هر ماژول و نمایش منوی اقتصاد.
 
 from __future__ import annotations
 
+import re
 import time
 from collections import defaultdict
 
@@ -56,6 +57,51 @@ async def economy_help_command(update: Update, context: ContextTypes.DEFAULT_TYP
 def _host():
     import bot as host
     return host
+
+
+def _normalize_fa(s: str) -> str:
+    """نیم‌فاصله‌ها (ZWNJ) و فاصله‌های اضافی رو یکدست می‌کنه تا تایپ عادی (بدون نیم‌فاصله،
+    که روی اکثر گوشی‌ها پیش‌فرضه) هم درست با لیبل‌های فارسی مطابقت پیدا کنه."""
+    s = (s or "").replace("\u200c", "")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _label_text(label: str) -> str:
+    """ایموجی ابتدای لیبل رو برمی‌داره، فقط متن فارسی می‌مونه."""
+    return re.sub(r"^[^\w\u0600-\u06FF]+", "", _normalize_fa(label)).strip()
+
+
+def resolve_module_key(name: str) -> tuple[str | None, list[str]]:
+    """اسمی که ادمین تایپ کرده رو به یه کلید ماژول دقیق تبدیل می‌کنه.
+    خروجی: (کلید یا None، لیست کاندیدها اگه مبهم/نامشخص بود).
+    برای جلوگیری از خاموش‌شدن اشتباه ماژول (مثلاً «بازار» که هم با بازار و هم
+    با بازار سیاه هم‌پوشانی داره)، اول فقط دنبال تطبیق دقیق (کلید یا متن کامل
+    لیبل) می‌گرده؛ تطبیق جزئی (substring) فقط وقتی قبول می‌شه که دقیقاً
+    یک کاندید داشته باشه، وگرنه همه‌ی کاندیدها برگردونده می‌شن تا کاربر دقیق‌تر بنویسه."""
+    norm_name = _normalize_fa(name)
+    if not norm_name:
+        return None, []
+    if name in TOGGLES:
+        return name, []
+    for k, v in TOGGLES.items():
+        if norm_name == _label_text(v) or norm_name == _normalize_fa(v):
+            return k, []
+    candidates = [k for k, v in TOGGLES.items() if norm_name in _normalize_fa(v)]
+    if len(candidates) == 1:
+        return candidates[0], []
+    return None, candidates
+
+
+def module_off_message(chat_id: int, key: str) -> str:
+    """پیام دقیق می‌ده بر اساس دلیل واقعی خاموش‌بودن: یا کل اقتصاد گروه خاموشه،
+    یا فقط همین یه بخش رو ادمین خاموش کرده (نه کل اقتصاد) - قبلاً هر دو حالت
+    یه پیام یکسانِ گمراه‌کننده («اقتصاد گروه خاموشه») نشون می‌دادن."""
+    host = _host()
+    if not host.get_setting(chat_id, "economy_enabled"):
+        return "🔒 اقتصاد این گروه خاموشه. یه ادمین باید از /menu بخش «اقتصاد و نظرسنجی» روشنش کنه."
+    label = TOGGLES.get(key, key)
+    return f"🔒 بخش «{label}» رو ادمین این گروه خاموش کرده (بقیه‌ی بخش‌های اقتصاد مشکلی ندارن)."
 
 
 def module_enabled(chat_id: int, key: str) -> bool:
@@ -116,10 +162,16 @@ async def economy_modules_command(update: Update, context: ContextTypes.DEFAULT_
     if state_word not in ("روشن", "خاموش"):
         await message.reply_text("وضعیت باید «روشن» یا «خاموش» باشه (آخرین کلمه).")
         return
-    key = next((k for k, v in TOGGLES.items() if name == k or name in v), None)
+    key, candidates = resolve_module_key(name)
     if not key:
-        names = "، ".join(TOGGLES.values())
-        await message.reply_text(f"همچین ماژولی نیست. گزینه‌ها: {names}")
+        if candidates:
+            opts = "، ".join(TOGGLES[c] for c in candidates)
+            await message.reply_text(
+                f"⚠️ اسمی که نوشتی بین چند ماژول مشترکه، دقیق‌تر بنویس: {opts}"
+            )
+        else:
+            names = "، ".join(TOGGLES.values())
+            await message.reply_text(f"همچین ماژولی نیست. گزینه‌ها: {names}")
         return
 
     host._chat_settings[chat.id][key] = (state_word == "روشن")
@@ -414,11 +466,17 @@ def _collect_state() -> dict:
 async def save_state():
     import json
     import os
+    import shutil
     path = getattr(config, "ECONOMY_ADMIN_STATE_FILE", "economy_admin_state.json")
     try:
         import asyncio
         def _write():
             tmp = path + ".tmp"
+            if os.path.exists(path):
+                try:
+                    shutil.copy2(path, path + ".bak")
+                except Exception:
+                    pass
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(_collect_state(), f, ensure_ascii=False)
             os.replace(tmp, path)
@@ -431,12 +489,22 @@ def load_state():
     import json
     import os
     path = getattr(config, "ECONOMY_ADMIN_STATE_FILE", "economy_admin_state.json")
-    if not os.path.exists(path):
-        return
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return
+    data = None
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = None
+    if data is None:
+        bak = path + ".bak"
+        if os.path.exists(bak):
+            try:
+                with open(bak, encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                return
+        else:
+            return
     for cid, log in data.items():
         _admin_audit_log[int(cid)] = log

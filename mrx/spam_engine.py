@@ -26,6 +26,7 @@ import difflib
 import json
 import logging
 import os
+import shutil
 import random
 import re
 import time
@@ -1761,6 +1762,11 @@ def collect_state() -> dict:
 
 def _write_state_file(data: dict):
     tmp = STATE_FILE + ".tmp"
+    if os.path.exists(STATE_FILE):
+        try:
+            shutil.copy2(STATE_FILE, STATE_FILE + ".bak")
+        except Exception as e:
+            logger.warning(f"بکاپ گرفتن از state ناموفق بود: {e}")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     os.replace(tmp, STATE_FILE)
@@ -1775,14 +1781,26 @@ async def save_state():
 
 
 def load_state():
-    if not os.path.exists(STATE_FILE):
-        return
-    try:
-        with open(STATE_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        logger.warning(f"خوندن state موتور اسپم ناموفق بود: {e}")
-        return
+    data = None
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"خوندن state موتور اسپم ناموفق بود: {e}؛ تلاش برای بازیابی از بکاپ...")
+            data = None
+    if data is None:
+        _bak = STATE_FILE + ".bak"
+        if os.path.exists(_bak):
+            try:
+                with open(_bak, encoding="utf-8") as f:
+                    data = json.load(f)
+                logger.warning("state اصلی خراب/نامعتبر بود؛ از بکاپ بازیابی شد.")
+            except Exception as e:
+                logger.warning(f"خوندن بکاپ هم ناموفق بود: {e}")
+                return
+        else:
+            return
 
     for cid, users in data.get("profiles", {}).items():
         for uid, p in users.items():

@@ -69,6 +69,38 @@ def _fmt(n) -> str:
         return str(n)
 
 
+def _tier_badge(amount) -> str:
+    """بج رنگی‌ای که بر اساس مبلغ واقعی عوض می‌شه - حس زنده‌بودن بدون نیاز به انیمیشن واقعی."""
+    try:
+        amount = float(amount)
+    except Exception:
+        return "💰"
+    if amount >= 1_000_000:
+        return "💎"
+    if amount >= 100_000:
+        return "🔥"
+    if amount >= 10_000:
+        return "✨"
+    if amount > 0:
+        return "💰"
+    return "🪫"
+
+
+def _mark(ok: bool) -> str:
+    return "✅" if ok else "❌"
+
+
+def _net_worth_line(total: int) -> str:
+    """یه خط پایانی که با رشد دارایی کاربر عوض می‌شه."""
+    if total >= 1_000_000:
+        return "👑 داری تبدیل به قدرتمندترین فرد این گروه می‌شی!"
+    if total >= 100_000:
+        return "🔥 خیلی خوب داری پیش می‌ری، همینطوری ادامه بده."
+    if total >= 10_000:
+        return "✨ وضعیتت داره رو به رشده."
+    return "🌱 تازه شروع کردی — با «پاداش روزانه» و «کار کن» شروع کن."
+
+
 def _back_row(sec: str | None = None) -> list:
     row = [InlineKeyboardButton("🔙 پنل اصلی", callback_data="ecop:hub")]
     if sec:
@@ -87,12 +119,14 @@ def _rows_of(buttons: list, per_row: int = 2) -> list:
 def _hub_text(chat_id: int, uid: int) -> str:
     wallet = economy_core.get_wallet(chat_id, uid)
     bank = economy_core.get_bank_balance(chat_id, uid)
+    total = wallet + bank
     return (
         "╭━━━━━━━━━━━━━━━━━━━━╮\n"
         "🛍 پنل اقتصاد (کاربری)\n"
         "╰━━━━━━━━━━━━━━━━━━━━╯\n\n"
-        f"💰 کیف پول: {_fmt(wallet)} {config.CURRENCY_NAME}\n"
-        f"🏦 بانک: {_fmt(bank)} {config.CURRENCY_NAME}\n\n"
+        f"{_tier_badge(wallet)} کیف پول: {_fmt(wallet)} {config.CURRENCY_NAME}\n"
+        f"{_tier_badge(bank)} بانک: {_fmt(bank)} {config.CURRENCY_NAME}\n\n"
+        f"{_net_worth_line(total)}\n\n"
         "با زدن هر دکمه، همون بخش باز می‌شه و خودت با دکمه خرید/استفاده می‌کنی.\n"
         "اگه پول کافی نباشه، ربات بهت می‌گه و چیزی کم نمی‌شه."
     )
@@ -100,20 +134,25 @@ def _hub_text(chat_id: int, uid: int) -> str:
 
 def _hub_markup(chat_id: int) -> InlineKeyboardMarkup:
     items = [
+        # روزانه
         ("🎁 پاداش روزانه", "ecop:daily"),
         ("🛒 پیشنهاد ویژه", "ecop:deal"),
+        # مالی
         ("🛍 فروشگاه", "ecop:sec:shop"),
         ("🎒 کوله‌پشتی", "ecop:sec:inv"),
         ("🏦 بانک", "ecop:sec:bank"),
         ("📈 بازار", "ecop:sec:market"),
         ("💼 شغل‌ها", "ecop:sec:jobs"),
         ("🏠 املاک", "ecop:sec:prop"),
+        # سبک زندگی
         ("🐾 پت", "ecop:sec:pet"),
         ("💍 ازدواج", "ecop:sec:marriage"),
+        # سرگرمی و رقابت
         ("🎮 بازی‌ها", "ecop:sec:games"),
+        ("🏆 رتبه‌ها", "ecop:rank"),
+        # ریسکی
         ("🖤 بازار سیاه", "ecop:sec:black"),
         ("🌑 دنیای زیرزمینی", "ecop:sec:ug"),
-        ("🏆 رتبه‌ها", "ecop:rank"),
     ]
     buttons = [InlineKeyboardButton(t, callback_data=d) for t, d in items]
     rows = _rows_of(buttons, 2)
@@ -195,7 +234,7 @@ async def _render_shop(chat_id: int, uid: int):
     overrides = host._shop_price_overrides[chat_id]
     hidden = host._shop_hidden_items[chat_id]
     owned = host._owned_badges[chat_id][uid]
-    lines = [f"🛍 فروشگاه (موجودی: {_fmt(wallet)} {config.CURRENCY_NAME})", ""]
+    lines = [f"🛍 فروشگاه ({_tier_badge(wallet)} موجودی: {_fmt(wallet)} {config.CURRENCY_NAME})", ""]
     buttons = []
     for key, item in config.SHOP_ITEMS.items():
         if key in hidden:
@@ -268,10 +307,16 @@ async def _render_bank(chat_id: int, uid: int):
         f"🏦 موجودی بانک: {_fmt(bank)} {config.CURRENCY_NAME}\n\n"
         "برای سپرده یا برداشتِ مبلغ دلخواه از دستور «سپرده [مبلغ]» / «برداشت [مبلغ]» هم می‌تونی استفاده کنی."
     )
-    dep_buttons = [InlineKeyboardButton(f"➕ سپرده {_fmt(a)}", callback_data=f"ecop:bank:dep:{a}") for a in _BANK_PRESETS]
+    dep_buttons = [
+        InlineKeyboardButton(f"{_mark(wallet >= a)} ➕ سپرده {_fmt(a)}", callback_data=f"ecop:bank:dep:{a}")
+        for a in _BANK_PRESETS
+    ]
     if wallet > 0:
-        dep_buttons.append(InlineKeyboardButton(f"➕ سپرده همه ({_fmt(wallet)})", callback_data="ecop:bank:dep:all"))
-    wd_buttons = [InlineKeyboardButton(f"➖ برداشت {_fmt(a)}", callback_data=f"ecop:bank:wd:{a}") for a in _BANK_PRESETS]
+        dep_buttons.append(InlineKeyboardButton(f"✅ ➕ سپرده همه ({_fmt(wallet)})", callback_data="ecop:bank:dep:all"))
+    wd_buttons = [
+        InlineKeyboardButton(f"{_mark(bank >= a)} ➖ برداشت {_fmt(a)}", callback_data=f"ecop:bank:wd:{a}")
+        for a in _BANK_PRESETS
+    ]
     rows = _rows_of(dep_buttons, 2) + _rows_of(wd_buttons, 2)
     rows.append([
         InlineKeyboardButton("🎁 دریافت سود", callback_data="ecop:bank:int"),
@@ -343,14 +388,17 @@ _MARKET_SPEND_PRESETS = [500, 1000, 5000]
 async def _render_market(chat_id: int, uid: int):
     wallet = economy_core.get_wallet(chat_id, uid)
     portfolio = economy_market._portfolio[chat_id].get(uid, {}) if hasattr(economy_market, "_portfolio") else {}
-    lines = [f"📈 بازار (موجودی: {_fmt(wallet)} {config.CURRENCY_NAME})", ""]
+    lines = [f"📈 بازار ({_tier_badge(wallet)} موجودی: {_fmt(wallet)} {config.CURRENCY_NAME})", ""]
     rows = []
     for symbol, info in economy_market.ASSETS.items():
         price = economy_market.current_price(chat_id, symbol)
         held = portfolio.get(symbol, {}).get("qty", 0)
         held_txt = f" | داری: {held:.4f}" if held else ""
         lines.append(f"• {info['name']} ({symbol}): {_fmt(round(price))} {config.CURRENCY_NAME}{held_txt}")
-        row = [InlineKeyboardButton(f"🛒 {symbol} {_fmt(spend)}", callback_data=f"ecop:mk:buy:{symbol}:{spend}") for spend in _MARKET_SPEND_PRESETS]
+        row = [
+            InlineKeyboardButton(f"{_mark(wallet >= spend)} 🛒 {symbol} {_fmt(spend)}", callback_data=f"ecop:mk:buy:{symbol}:{spend}")
+            for spend in _MARKET_SPEND_PRESETS
+        ]
         if held > 0:
             row.append(InlineKeyboardButton(f"💵 فروش همه‌ی {symbol}", callback_data=f"ecop:mk:sell:{symbol}"))
         if row:
@@ -483,10 +531,11 @@ async def _render_games(chat_id: int, uid: int):
     text = f"🎮 بازی‌ها (موجودی: {_fmt(wallet)} {config.CURRENCY_NAME})\n\nیه شرط رو انتخاب کن:"
     rows = []
     for bet in _GAME_BETS:
+        m = _mark(wallet >= bet)
         rows.append([
-            InlineKeyboardButton(f"🎲 تاس {_fmt(bet)}", callback_data=f"ecop:game:dice:{bet}"),
-            InlineKeyboardButton(f"🪙 شیر {_fmt(bet)}", callback_data=f"ecop:game:cfS:{bet}"),
-            InlineKeyboardButton(f"🪙 خط {_fmt(bet)}", callback_data=f"ecop:game:cfX:{bet}"),
+            InlineKeyboardButton(f"{m} 🎲 تاس {_fmt(bet)}", callback_data=f"ecop:game:dice:{bet}"),
+            InlineKeyboardButton(f"{m} 🪙 شیر {_fmt(bet)}", callback_data=f"ecop:game:cfS:{bet}"),
+            InlineKeyboardButton(f"{m} 🪙 خط {_fmt(bet)}", callback_data=f"ecop:game:cfX:{bet}"),
         ])
     rows.append(_back_row("games"))
     return text, InlineKeyboardMarkup(rows)

@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import time
 from collections import defaultdict
 
@@ -236,7 +237,7 @@ async def bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     import economy_admin
     if not economy_admin.module_enabled(chat.id, "economy_module_bank"):
-        await message.reply_text("اقتصاد گروه خاموشه.")
+        await message.reply_text(economy_admin.module_off_message(chat.id, "economy_module_bank"))
         return
 
     uid = update.effective_user.id
@@ -291,7 +292,7 @@ async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     import economy_admin
     if not economy_admin.module_enabled(chat.id, "economy_module_bank"):
-        await message.reply_text("اقتصاد گروه خاموشه.")
+        await message.reply_text(economy_admin.module_off_message(chat.id, "economy_module_bank"))
         return
 
     uid = update.effective_user.id
@@ -331,7 +332,7 @@ async def long_deposit_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     import economy_admin
     if not economy_admin.module_enabled(chat.id, "economy_module_bank"):
-        await message.reply_text("اقتصاد گروه خاموشه.")
+        await message.reply_text(economy_admin.module_off_message(chat.id, "economy_module_bank"))
         return
 
     uid = update.effective_user.id
@@ -456,7 +457,7 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     import economy_admin
     if not economy_admin.module_enabled(chat.id, "economy_module_bank"):
-        await message.reply_text("اقتصاد گروه خاموشه.")
+        await message.reply_text(economy_admin.module_off_message(chat.id, "economy_module_bank"))
         return
 
     uid = update.effective_user.id
@@ -584,7 +585,7 @@ async def take_loan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     import economy_admin
     if not economy_admin.module_enabled(chat.id, "economy_module_bank"):
-        await message.reply_text("اقتصاد گروه خاموشه.")
+        await message.reply_text(economy_admin.module_off_message(chat.id, "economy_module_bank"))
         return
 
     uid = update.effective_user.id
@@ -726,6 +727,11 @@ def _collect_state() -> dict:
 
 def _write_state_file(data: dict):
     tmp = STATE_FILE + ".tmp"
+    if os.path.exists(STATE_FILE):
+        try:
+            shutil.copy2(STATE_FILE, STATE_FILE + ".bak")
+        except Exception as e:
+            logger.warning(f"بکاپ گرفتن از state ناموفق بود: {e}")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     os.replace(tmp, STATE_FILE)
@@ -740,14 +746,26 @@ async def save_state():
 
 
 def load_state():
-    if not os.path.exists(STATE_FILE):
-        return
-    try:
-        with open(STATE_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        logger.warning(f"خوندن state موتور Bank ناموفق بود: {e}")
-        return
+    data = None
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"خوندن state موتور Bank ناموفق بود: {e}؛ تلاش برای بازیابی از بکاپ...")
+            data = None
+    if data is None:
+        _bak = STATE_FILE + ".bak"
+        if os.path.exists(_bak):
+            try:
+                with open(_bak, encoding="utf-8") as f:
+                    data = json.load(f)
+                logger.warning("state اصلی خراب/نامعتبر بود؛ از بکاپ بازیابی شد.")
+            except Exception as e:
+                logger.warning(f"خوندن بکاپ هم ناموفق بود: {e}")
+                return
+        else:
+            return
 
     for cid, v in data.get("bank_level", {}).items():
         _bank_level[int(cid)] = {int(u): lvl for u, lvl in v.items()}

@@ -22,6 +22,7 @@ import calendar
 import json
 import logging
 import os
+import shutil
 import random
 import re
 import time
@@ -393,6 +394,11 @@ def _collect_state() -> dict:
 
 def _write_state_file(data: dict):
     tmp_path = config.STATE_FILE + ".tmp"
+    if os.path.exists(config.STATE_FILE):
+        try:
+            shutil.copy2(config.STATE_FILE, config.STATE_FILE + ".bak")
+        except Exception as e:
+            logger.warning(f"بکاپ گرفتن از state اصلی ناموفق بود: {e}")
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     os.replace(tmp_path, config.STATE_FILE)
@@ -476,14 +482,26 @@ def load_state():
     economy_events.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
-    if not os.path.exists(config.STATE_FILE):
-        return
-    try:
-        with open(config.STATE_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        logger.warning(f"خوندن وضعیت ذخیره‌شده ناموفق بود: {e}")
-        return
+    data = None
+    if os.path.exists(config.STATE_FILE):
+        try:
+            with open(config.STATE_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"خوندن وضعیت ذخیره‌شده ناموفق بود: {e}؛ تلاش برای بازیابی از بکاپ...")
+            data = None
+    if data is None:
+        _bak = config.STATE_FILE + ".bak"
+        if os.path.exists(_bak):
+            try:
+                with open(_bak, encoding="utf-8") as f:
+                    data = json.load(f)
+                logger.warning("state اصلی خراب/نامعتبر بود؛ از بکاپ بازیابی شد.")
+            except Exception as e:
+                logger.warning(f"خوندن بکاپ هم ناموفق بود: {e}")
+                return
+        else:
+            return
 
     _known_chats.update(data.get("known_chats", []))
 
