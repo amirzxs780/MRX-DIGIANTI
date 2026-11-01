@@ -6480,14 +6480,35 @@ def _group_picker_text() -> str:
     )
 
 
-def _group_picker_markup(chats) -> InlineKeyboardMarkup:
-    buttons = [
-        InlineKeyboardButton(_chat_titles.get(cid, str(cid)), callback_data=f"adm:pick:{cid}")
+def _group_picker_markup(chats, bot_username: str | None = None) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(_chat_titles.get(cid, str(cid)), callback_data=f"adm:pick:{cid}"),
+            InlineKeyboardButton("🚪 خروج", callback_data=f"grp:leaveask:{cid}"),
+        ]
         for cid in chats
     ]
-    rows = _pair_rows(buttons)
+    # دکمه‌ی افزودن ربات به گروه جدید: توی API تلگرام هیچ راهی نیست که یه ربات
+    # خودش، بدون اکشن یه انسان، به یه گروه بپیونده - این لینک فقط دیالوگ رسمی
+    # «انتخاب گروه برای افزودن ربات» تلگرام رو باز می‌کنه که سریع‌تر از جست‌وجوی
+    # دستیه، ولی همچنان باید خودت گروه مقصد رو همونجا لمس کنی.
+    if bot_username:
+        rows.append(
+            [InlineKeyboardButton("➕ افزودن ربات به گروه جدید", url=f"https://t.me/{bot_username}?startgroup=true")]
+        )
     rows.append([InlineKeyboardButton("❌ بستن", callback_data="menu_close")])
     return InlineKeyboardMarkup(rows)
+
+
+def _group_leave_confirm_markup(chat_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ بله، خارج شو", callback_data=f"grp:leave:{chat_id}"),
+                InlineKeyboardButton("❌ انصراف", callback_data="grp:cancel"),
+            ]
+        ]
+    )
 
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -6502,7 +6523,9 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "هنوز هیچ گروهی شناخته نشده. اول ربات رو به یه گروه اضافه و ادمینش کن."
             )
             return
-        await update.effective_message.reply_text(_group_picker_text(), reply_markup=_group_picker_markup(groups))
+        await update.effective_message.reply_text(
+            _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
+        )
         return
     await update.effective_message.reply_text(
         _menu_header_text(chat.id),
@@ -6588,6 +6611,63 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(_menu_header_text(picked_chat_id), reply_markup=_build_main_menu_markup(picked_chat_id))
         return
 
+    # پنل شخصی توی پیوی ربات: خروج ربات از یه گروه (افزودن خودکار ممکن نیست -
+    # تلگرام به ربات‌ها اجازه نمی‌ده خودشون بدون اکشن یه انسان به گروهی بپیوندن؛
+    # دکمه‌ی «افزودن به گروه جدید» توی _group_picker_markup همون محدودیت رو با
+    # لینک startgroup دور می‌زنه، نه یه کال‌بک این‌جا).
+    if query.data and query.data.startswith("grp:"):
+        if not has_permission(user.id, "manage_groups"):
+            await query.answer("این بخش فقط برای ادمین‌های مجاز به «manage_groups»ست.", show_alert=True)
+            return
+        grp_parts = query.data.split(":")
+        grp_action = grp_parts[1]
+
+        if grp_action == "cancel":
+            await query.answer()
+            await query.edit_message_text(
+                _group_picker_text(), reply_markup=_group_picker_markup(sorted(_known_chats), context.bot.username)
+            )
+            return
+
+        grp_chat_id = int(grp_parts[2])
+        grp_title = _chat_titles.get(grp_chat_id, str(grp_chat_id))
+
+        if grp_action == "leaveask":
+            await query.answer()
+            await query.edit_message_text(
+                f"⚠️ مطمئنی می‌خوای ربات از «{grp_title}» خارج بشه؟\n"
+                "بعدش تا یه عضو گروه دوباره اضافه‌اش نکنه، هیچ کاری اونجا نمی‌تونه بکنه.",
+                reply_markup=_group_leave_confirm_markup(grp_chat_id),
+            )
+            return
+
+        if grp_action == "leave":
+            await query.answer()
+            try:
+                await context.bot.leave_chat(grp_chat_id)
+            except Exception as e:
+                logger.warning(f"خروج از گروه {grp_chat_id} ناموفق بود: {e}")
+                await query.edit_message_text(
+                    f"❌ خروج از «{grp_title}» ناموفق بود (شاید ربات از قبل اونجا نبوده).",
+                    reply_markup=_group_picker_markup(sorted(_known_chats), context.bot.username),
+                )
+                return
+            _known_chats.discard(grp_chat_id)
+            _chat_titles.pop(grp_chat_id, None)
+            if _admin_selected_chat.get(user.id) == grp_chat_id:
+                _admin_selected_chat.pop(user.id, None)
+            await save_state()
+            groups = sorted(_known_chats)
+            header = f"✅ ربات از «{grp_title}» خارج شد.\n\n" + _group_picker_text()
+            if groups:
+                await query.edit_message_text(header, reply_markup=_group_picker_markup(groups, context.bot.username))
+            else:
+                await query.edit_message_text(header + "\n\nفعلاً توی هیچ گروهی نیست.")
+            return
+
+        await query.answer()
+        return
+
     is_private = query.message.chat.type == "private"
     if is_private:
         chat_id = _admin_selected_chat.get(user.id)
@@ -6597,7 +6677,9 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             if not groups:
                 await query.edit_message_text("هنوز هیچ گروهی شناخته نشده.")
                 return
-            await query.edit_message_text(_group_picker_text(), reply_markup=_group_picker_markup(groups))
+            await query.edit_message_text(
+                _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
+            )
             return
     else:
         chat_id = query.message.chat_id
@@ -6626,7 +6708,9 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer()
         if is_private:
             groups = sorted(_known_chats)
-            await query.edit_message_text(_group_picker_text(), reply_markup=_group_picker_markup(groups))
+            await query.edit_message_text(
+                _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
+            )
         else:
             await query.edit_message_text(_menu_header_text(chat_id), reply_markup=_build_main_menu_markup(chat_id))
         return
