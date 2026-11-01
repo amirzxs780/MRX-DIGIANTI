@@ -1161,6 +1161,15 @@ async def member_left_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not left_group:
         return
 
+    # 🐛 پاکسازی «اعضای شناخته‌شده» (رفع‌شده): قبلاً عضوها فقط توی _known_members
+    # اضافه می‌شدن (هم موقع join، هم موقع هر پیامی که می‌فرستادن) ولی هیچ‌جا موقع
+    # خروج/اخراج/بن حذف نمی‌شدن. برای همین «تگ همه»، شمارش اعضا و هر چیزی که از
+    # روی این لیست کار می‌کرد، همیشه آدمایی که مدت‌ها پیش رفته بودن رو هم نشون
+    # می‌داد. این پاکسازی باید مستقل از تنظیم bot_enabled انجام بشه، چون خودِ
+    # اضافه‌شدن به این لیست هم (توی track_chat_and_stats) به اون تنظیم وابسته نیست.
+    if not user.is_bot:
+        _known_members[chat_id].discard(user.id)
+
     if user.is_bot or not settings.get("bot_enabled", False):
         return
 
@@ -1202,6 +1211,36 @@ async def member_left_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.warning(f"ارسال پیام ترک گروه ناموفق بود: {e}")
 
     await _log_admin_action(context, chat_id, f"{event_label}: {data['full_name']} (آیدی {user.id})")
+
+
+async def _bot_membership_changed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """🐛 لیست «قدیمی‌ها» توی پنل گروه‌ها (رفع‌شده): قبلاً هیچ هندلری برای رویداد
+    my_chat_member (تغییر وضعیت خودِ ربات توی یه چت) ثبت نشده بود. یعنی اگه یه ادمین
+    گروه خودش دستی ربات رو حذف/اخراج می‌کرد (نه با دکمه‌ی 🚪 خروج توی پنل خودِ ربات)،
+    یا گروه حذف می‌شد، آیدی اون گروه برای همیشه توی _known_chats/_chat_titles
+    می‌موند و توی لیست پنل پیوی به‌عنوان یه گروه مُرده و قدیمی نشون داده می‌شد."""
+    result = update.my_chat_member
+    if result is None:
+        return
+    chat = result.chat
+    new_status = result.new_chat_member.status
+
+    if new_status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
+        _known_chats.discard(chat.id)
+        _chat_titles.pop(chat.id, None)
+        for admin_id, picked_chat_id in list(_admin_selected_chat.items()):
+            if picked_chat_id == chat.id:
+                _admin_selected_chat.pop(admin_id, None)
+        await save_state()
+        return
+
+    # ربات به یه گروه اضافه شد (یا وضعیتش عوض شد ولی هنوز توشه) - همون لحظه توی
+    # لیست ثبتش کن، نه اینکه منتظر اولین پیامی که توی اون گروه رد و بدل می‌شه بمونیم.
+    if chat.type in ("group", "supergroup"):
+        _known_chats.add(chat.id)
+        if chat.title:
+            _chat_titles[chat.id] = chat.title
+        await save_state()
 
 
 async def _check_captcha_timeouts():
@@ -6480,6 +6519,31 @@ def _group_picker_text() -> str:
     )
 
 
+async def _get_verified_known_chats(context: ContextTypes.DEFAULT_TYPE) -> list[int]:
+    """🐛 «لیست قدیمی‌ها» (رفع‌شده - پاک‌سازی عطف‌به‌ماسبق): فیکس هندلر my_chat_member
+    فقط جلوی قدیمی‌شدنِ لیست رو از این به بعد می‌گیره؛ گروه‌هایی که از قبلِ این فیکس
+    به همون روش (اخراج دستی توسط یه ادمین دیگه) از _known_chats پاک نشده بودن، همچنان
+    اونجا می‌موندن. برای همین هر بار که پنل گروه‌ها باز می‌شه، واقعاً از تلگرام می‌پرسیم
+    ربات هنوز توی اون گروه عضوه یا نه، و هر گروه مُرده‌ای رو همینجا هم قطعی حذف می‌کنیم."""
+    verified, dead = [], []
+    for chat_id in sorted(_known_chats):
+        try:
+            member = await context.bot.get_chat_member(chat_id, context.bot.id)
+            if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
+                dead.append(chat_id)
+            else:
+                verified.append(chat_id)
+        except Exception:
+            # گروه حذف شده، ربات توش نیست، یا هر خطای دیگه‌ای - یعنی دیگه قابل‌اعتماد نیست
+            dead.append(chat_id)
+    if dead:
+        for chat_id in dead:
+            _known_chats.discard(chat_id)
+            _chat_titles.pop(chat_id, None)
+        await save_state()
+    return verified
+
+
 def _group_picker_markup(chats, bot_username: str | None = None) -> InlineKeyboardMarkup:
     rows = [
         [
@@ -6517,7 +6581,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     chat = update.effective_chat
     if chat.type == "private":
-        groups = sorted(_known_chats)
+        groups = await _get_verified_known_chats(context)
         if not groups:
             await update.effective_message.reply_text(
                 "هنوز هیچ گروهی شناخته نشده. اول ربات رو به یه گروه اضافه و ادمینش کن."
@@ -6624,8 +6688,9 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
         if grp_action == "cancel":
             await query.answer()
+            groups = await _get_verified_known_chats(context)
             await query.edit_message_text(
-                _group_picker_text(), reply_markup=_group_picker_markup(sorted(_known_chats), context.bot.username)
+                _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
             )
             return
 
@@ -6647,9 +6712,10 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 await context.bot.leave_chat(grp_chat_id)
             except Exception as e:
                 logger.warning(f"خروج از گروه {grp_chat_id} ناموفق بود: {e}")
+                groups = await _get_verified_known_chats(context)
                 await query.edit_message_text(
                     f"❌ خروج از «{grp_title}» ناموفق بود (شاید ربات از قبل اونجا نبوده).",
-                    reply_markup=_group_picker_markup(sorted(_known_chats), context.bot.username),
+                    reply_markup=_group_picker_markup(groups, context.bot.username),
                 )
                 return
             _known_chats.discard(grp_chat_id)
@@ -6657,7 +6723,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             if _admin_selected_chat.get(user.id) == grp_chat_id:
                 _admin_selected_chat.pop(user.id, None)
             await save_state()
-            groups = sorted(_known_chats)
+            groups = await _get_verified_known_chats(context)
             header = f"✅ ربات از «{grp_title}» خارج شد.\n\n" + _group_picker_text()
             if groups:
                 await query.edit_message_text(header, reply_markup=_group_picker_markup(groups, context.bot.username))
@@ -6672,7 +6738,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if is_private:
         chat_id = _admin_selected_chat.get(user.id)
         if chat_id is None:
-            groups = sorted(_known_chats)
+            groups = await _get_verified_known_chats(context)
             await query.answer()
             if not groups:
                 await query.edit_message_text("هنوز هیچ گروهی شناخته نشده.")
@@ -6707,7 +6773,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if query.data == "menu_back":
         await query.answer()
         if is_private:
-            groups = sorted(_known_chats)
+            groups = await _get_verified_known_chats(context)
             await query.edit_message_text(
                 _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
             )
@@ -8217,6 +8283,7 @@ def main():
 
     # عضو جدید (نیازمنده که ربات مجوز chat_member updates داشته باشه)
     app.add_handler(ChatMemberHandler(welcome_new_member, ChatMemberHandler.CHAT_MEMBER))
+    app.add_handler(ChatMemberHandler(_bot_membership_changed, ChatMemberHandler.MY_CHAT_MEMBER))
 
     # ترک/اخراج عضو از گروه (پیام لفت با تاریخ و ساعت دقیق) - شماره‌ی گروه جدا از خوش‌آمدگویی
     app.add_handler(ChatMemberHandler(member_left_handler, ChatMemberHandler.CHAT_MEMBER), group=-1)
