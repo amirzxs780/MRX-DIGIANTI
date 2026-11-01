@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import shutil
 import random
@@ -373,6 +374,14 @@ async def sell_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             qty = float(args[1])
         except ValueError:
+            await message.reply_text("مقدار نامعتبره.")
+            return
+        # باگ: مقایسه‌ی هر عددی با NaN همیشه False برمی‌گرده، پس چک قبلیِ
+        # «qty <= 0 or qty > ...» (یه OR از دو تا شرطِ رد-کردن) با ورودی nan
+        # (مثلاً «فروش BTC nan») هر دو شرط False می‌شد و NaN از validation رد
+        # می‌شد؛ بعدش round(nan) پایین‌تر ValueError می‌داد و کاربر هیچ پاسخی
+        # نمی‌گرفت. math.isnan صریح، مستقل از نحوه‌ی چیدن بقیه‌ی شرط‌ها، جلوشو می‌گیره.
+        if math.isnan(qty):
             await message.reply_text("مقدار نامعتبره.")
             return
     if qty <= 0 or qty > pos["qty"] + 1e-9:

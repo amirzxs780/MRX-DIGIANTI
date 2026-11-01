@@ -43,6 +43,7 @@ import os
 import shutil
 import time
 import uuid
+import weakref
 from collections import defaultdict
 from typing import Callable
 
@@ -106,7 +107,16 @@ _sink_totals = defaultdict(lambda: defaultdict(int))      # chat_id -> kind -> �
 # Condition وقتی دو تا Command هم‌زمان روی موجودی یه نفر کار می‌کنن).
 # دیکشنری خودش نیاز به Lock نداره چون asyncio تک‌ترده و ساختنِ یه کلید جدید
 # هیچ‌وقت بین دو await قطع نمی‌شه.
-_user_locks: dict[tuple[int, int], asyncio.Lock] = {}
+#
+# باگ قبلی: این یه dict معمولی بود، یعنی برای هر (chat_id, user_id) که
+# حتی یه‌بار یه عملیات قفل‌دار انجام می‌داد، یه Lock برای همیشه توی حافظه
+# می‌موند - با گذشت زمان و افزایش تعداد کاربرها، این دیکشنری فقط بزرگ‌تر
+# می‌شد و هیچ‌وقت آزاد نمی‌شد (نشتی حافظه).
+# فیکس: WeakValueDictionary. هر Lock فقط وقتی زنده می‌مونه که یه async-with
+# فعال (یا در حال انتظار) روش باشه؛ به‌محض اینکه آخرین نگه‌دارنده‌ش آزادش
+# کنه، خودش از دیکشنری پاک می‌شه (توسط GC رفرنس‌کانتینگِ CPython، بدون
+# نیاز به هیچ Task پاک‌سازیِ دوره‌ایِ جدا).
+_user_locks: "weakref.WeakValueDictionary[tuple[int, int], asyncio.Lock]" = weakref.WeakValueDictionary()
 
 # 📊 Net Worth Registry — ماژول‌های بعدی (Property/City/Pet/Market/...) با
 # register_net_worth_source(fn) خودشونو ثبت می‌کنن. fn باید sync و سریع باشه
