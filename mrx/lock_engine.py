@@ -1151,7 +1151,7 @@ async def panel_callback_handler(update, context: ContextTypes.DEFAULT_TYPE):
             names = ", ".join(PRESET_PROFILES.keys())
             await query.answer()
             await query.message.reply_text(
-                f"🎯 پروفایل‌های آماده:\n{names}\n\nفعال‌سازی: /lockprofile <نام>"
+                f"🎯 پروفایل‌های آماده:\n{names}\n\nفعال‌سازی: ‎/lockprofile <نام>"
             )
             return
         if sub == "exceptions":
@@ -1159,7 +1159,7 @@ async def panel_callback_handler(update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
             await query.message.reply_text(
                 "🛡️ استثناها:\n" + (", ".join(str(x) for x in excs) if excs else "خالی")
-                + "\n\nافزودن: /lock exception add <آیدی>\nحذف: /lock exception remove <آیدی>"
+                + "\n\nافزودن: ‎/lock exception add <آیدی>\nحذف: ‎/lock exception remove <آیدی>"
             )
             return
         if sub == "actions":
@@ -1172,7 +1172,7 @@ async def panel_callback_handler(update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
             await query.message.reply_text(
                 "⏱️ زمان‌بندی:\n/lock schedule <نوع> <شروع HH:MM> <پایان HH:MM> [روزها مثل MO,TU]\n"
-                "لغو: /lock schedule <نوع> off"
+                "لغو: ‎/lock schedule <نوع> off"
             )
             return
 
@@ -1465,7 +1465,7 @@ async def lock_command(update, context: ContextTypes.DEFAULT_TYPE):
             log_audit(chat_id, update.effective_user.id, update.effective_user.first_name or "?", f"schedule {lock_key} {start}-{end}")
             await host.save_state()
             return
-        await update.effective_message.reply_text("استفاده: /lock schedule <نوع> <شروع HH:MM> <پایان HH:MM> [MO,TU,...]")
+        await update.effective_message.reply_text("استفاده: ‎/lock schedule <نوع> <شروع HH:MM> <پایان HH:MM> [MO,TU,...]\nمثال: ‎/lock schedule media 23:00 07:00 FR,SA")
         return
 
     # ---------- /lock profile save/load/delete <name> ----------
@@ -1492,7 +1492,7 @@ async def lock_command(update, context: ContextTypes.DEFAULT_TYPE):
                 await update.effective_message.reply_text("پروفایلی با این اسم پیدا نشد.")
             await host.save_state()
             return
-        await update.effective_message.reply_text("استفاده: /lock profile save|load|delete <نام>")
+        await update.effective_message.reply_text("استفاده: ‎/lock profile save|load|delete <نام>\nمثال: ‎/lock profile save شب‌آرام")
         return
 
     # ---------- /lock emergency ----------
@@ -1520,7 +1520,7 @@ async def lock_command(update, context: ContextTypes.DEFAULT_TYPE):
             _pending_confirmation[key] = {"cmd": "lock_all", "expires": _now() + _CONFIRM_WINDOW_SECONDS}
             await update.effective_message.reply_text(
                 "⚠️ این کار همه‌ی قفل‌ها (از جمله بستن کامل گروه) رو فعال می‌کنه.\n"
-                "برای تایید، تا ۳۰ ثانیه‌ی دیگه دوباره /lock all رو بفرست."
+                "برای تایید، تا ۳۰ ثانیه‌ی دیگه دوباره ‎/lock all رو بفرست."
             )
         return
 
@@ -1546,7 +1546,7 @@ async def lock_command(update, context: ContextTypes.DEFAULT_TYPE):
     if len(args) >= 3 and args[1].lower() in ("newmember", "new_member"):
         lock_key = _resolve_lock_key(sub)
         if not lock_key or not args[2].isdigit():
-            await update.effective_message.reply_text("استفاده: /lock <نوع> newmember <دقیقه>")
+            await update.effective_message.reply_text("استفاده: ‎/lock <نوع> newmember <دقیقه>\nمثال: ‎/lock link newmember 60")
             return
         cfg = get_lock_cfg(chat_id, lock_key)
         cfg["new_member_only"] = True
@@ -1610,7 +1610,7 @@ async def lock_command(update, context: ContextTypes.DEFAULT_TYPE):
     lock_key = _resolve_lock_key(sub)
     if not lock_key:
         await update.effective_message.reply_text(
-            "نوع قفل نامعتبره. برای دیدن همه‌ی قفل‌ها: /locks"
+            "نوع قفل نامعتبره. برای دیدن همه‌ی قفل‌ها: ‎/locks"
         )
         return
 
@@ -1651,7 +1651,7 @@ async def unlock_command(update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     args = context.args or []
     if not args:
-        await update.effective_message.reply_text("استفاده: /unlock <نوع> یا /unlock all یا /unlock emergency")
+        await update.effective_message.reply_text("استفاده: ‎/unlock <نوع>  یا  ‎/unlock all  یا  ‎/unlock emergency")
         return
 
     sub = args[0].lower()
@@ -1687,7 +1687,7 @@ async def lockinfo_command(update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     target_id, name, _r = host._parse_target_and_reason(update)
     if target_id is None:
-        await update.effective_message.reply_text("ریپلای بزن یا: /lockinfo <آیدی>")
+        await update.effective_message.reply_text("ریپلای بزن یا: ‎/lockinfo <آیدی>")
         return
     profile = get_user_lock_profile(chat_id, target_id)
     role = get_role(chat_id, target_id)
@@ -1742,7 +1742,7 @@ async def locktest_command(update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     if not args or args[0].lower() not in ("on", "off"):
         current = "روشن" if is_dry_run(chat_id) else "خاموش"
-        await update.effective_message.reply_text(f"وضعیت فعلی حالت تست: {current}\nاستفاده: /locktest on یا /locktest off")
+        await update.effective_message.reply_text(f"وضعیت فعلی حالت تست: {current}\nاستفاده: ‎/locktest on  یا  ‎/locktest off")
         return
     set_dry_run(chat_id, args[0].lower() == "on")
     await update.effective_message.reply_text(
@@ -1792,7 +1792,7 @@ async def lockcheck_command(update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         lines.append("")
-        lines.append("✅ همه‌چی از نظر دسترسی مرتبه؛ اگه بازم قفل/اسپم پاک نمی‌کنه، مطمئن شو «ربات روشن» و خودِ قفل موردنظر فعاله (با /locks چک کن).")
+        lines.append("✅ همه‌چی از نظر دسترسی مرتبه؛ اگه بازم قفل/اسپم پاک نمی‌کنه، مطمئن شو «ربات روشن» و خودِ قفل موردنظر فعاله (با ‎/locks چک کن).")
 
     await update.effective_message.reply_text("\n".join(lines))
 
@@ -1802,7 +1802,7 @@ async def lockconfig_command(update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     args = context.args or []
     if not args:
-        await update.effective_message.reply_text("استفاده: /lockconfig <نوع قفل>")
+        await update.effective_message.reply_text("استفاده: ‎/lockconfig <نوع قفل>\nمثال: ‎/lockconfig link")
         return
     lock_key = _resolve_lock_key(args[0])
     if not lock_key:

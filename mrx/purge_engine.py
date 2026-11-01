@@ -598,9 +598,9 @@ def _purge_help_text() -> str:
     return (
         "🧹 راهنمای کامل پاکسازی\n\n"
         "پایه:\n"
-        "• /purge (ریپلای) › از پیام ریپلای‌شده تا الان\n"
-        "• /purge 50 / 100 / 500 › تعداد اخیر\n"
-        "• /purge 1h / 24h / 7d › بازه‌ی زمانی (یا: 1ساعت، 24ساعت، 7روز)\n\n"
+        "• ‎/purge (ریپلای) › از پیام ریپلای‌شده تا الان\n"
+        "• ‎/purge 50 / 100 / 500 › تعداد اخیر\n"
+        "• ‎/purge 1h / 24h / 7d › بازه‌ی زمانی (یا: 1ساعت، 24ساعت، 7روز)\n\n"
         "بر اساس نوع پیام:\n"
         "• media/رسانه، photo/عکس، video/ویدیو، file/فایل،\n"
         "  sticker/استیکر، gif/گیف، voice/ویس، audio/صوت\n\n"
@@ -608,14 +608,14 @@ def _purge_help_text() -> str:
         "• links/لینک • bots/ربات‌ها • duplicates/تکراری‌ها\n"
         "• spam/اسپم • ads/تبلیغات • smart/هوشمند\n"
         "• text <عبارت> / متن <عبارت>\n\n"
-        "ترکیبی: /purge 1h links   یا   /purge 100 media\n\n"
+        "ترکیبی: ‎/purge 1h links   یا   ‎/purge 100 media\n\n"
         "حالت‌ها:\n"
         "• preview/پیش‌نمایش › قبل از حذف نشون می‌ده\n"
         "• silent/بی‌صدا › بدون گزارش توی چت\n\n"
         "کاربر خاص:\n"
-        "• /purgeuser (ریپلای) [تعداد|بازه‌زمانی]\n"
-        "• /purgeuser <آیدی عددی> [تعداد|بازه‌زمانی]\n"
-        "• /purgeuser @username [تعداد|بازه‌زمانی]\n\n"
+        "• ‎/purgeuser (ریپلای) [تعداد|بازه‌زمانی]\n"
+        "• ‎/purgeuser <آیدی عددی> [تعداد|بازه‌زمانی]\n"
+        "• ‎/purgeuser @username [تعداد|بازه‌زمانی]\n\n"
         "آمار:\n"
         "• /purgestats\n\n"
         "همه‌ی دستورهای بالا معادل فارسی «پاکسازی ...» و «پاکسازی کاربر ...» "
@@ -789,8 +789,9 @@ async def _legacy_purge_by_reply(update, context) -> None:
 
     if not message.reply_to_message:
         await message.reply_text(
-            "استفاده: رو پیامی که می‌خوای پاک‌سازی از اونجا شروع بشه ریپلای بزن و بنویس /purge\n"
-            "یا: /purge <تعداد|بازه‌زمانی|فیلتر> — راهنمای کامل: /purge help"
+            "استفاده: روی پیامی که می‌خوای پاکسازی از اونجا شروع بشه ریپلای بزن و بنویس ‎/purge\n"
+            "یا بدون ریپلای: ‎/purge <تعداد|بازه‌زمانی|فیلتر>\n"
+            "مثال: ‎/purge 100  یا  ‎/purge 2h  —  راهنمای کامل: ‎/purge help"
         )
         return
 
@@ -853,7 +854,7 @@ async def purge_command(update, context) -> None:
 
     spec, errors = parse_purge_args(args)
     if errors:
-        await message.reply_text("⚠️ ورودی نامعتبر:\n" + "\n".join(errors) + "\n\nراهنما: /purge help")
+        await message.reply_text("⚠️ ورودی نامعتبر:\n" + "\n".join(errors) + "\n\nراهنما: ‎/purge help")
         return
 
     required_flags = []
@@ -887,11 +888,11 @@ async def purge_command(update, context) -> None:
 
 
 _PURGEUSER_USAGE = (
-    "استفاده (هر کدوم از این سه راه):\n"
-    "• ریپلای روی پیام کاربر + /purgeuser [تعداد|بازه‌زمانی]\n"
-    "• /purgeuser <آیدی عددی> [تعداد|بازه‌زمانی]\n"
-    "• /purgeuser @username [تعداد|بازه‌زمانی]\n"
-    "مثال: /purgeuser 100  یا  /purgeuser @ali_123 24h  یا  /purgeuser 123456789 7d"
+    "استفاده (یکی از این سه روش):\n"
+    "• روی پیام کاربر ریپلای بزن و بنویس ‎/purgeuser [تعداد|بازه‌زمانی]\n"
+    "• ‎/purgeuser <آیدی عددی> [تعداد|بازه‌زمانی]\n"
+    "• ‎/purgeuser @username [تعداد|بازه‌زمانی]\n"
+    "مثال: ‎/purgeuser 100  یا  ‎/purgeuser @ali_123 24h  یا  ‎/purgeuser 123456789 7d"
 )
 
 

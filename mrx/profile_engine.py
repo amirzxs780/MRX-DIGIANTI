@@ -707,7 +707,7 @@ async def rep_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     target_id, name, _reason = host._parse_target_and_reason(update)
     if target_id is None:
-        await message.reply_text("استفاده: روی پیام یه نفر ریپلای بزن و بنویس /rep")
+        await message.reply_text("استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/rep")
         return
     result = give_reputation(chat.id, update.effective_user.id, target_id)
     await message.reply_text(f"{result}\n👤 گیرنده: {name} — 💎 مجموع Reputation: {reputation_of(chat.id, target_id)}")
@@ -921,7 +921,7 @@ async def lqab_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append("👑 لقب ویژه‌ی در دسترس: OWNER")
     if user.id in host._vip_users[chat.id]:
         lines.append("💎 لقب ویژه‌ی در دسترس: VIP")
-    lines.append("\nبرای تنظیم لقب دلخواه: /setlqab <لقب>")
+    lines.append("\nبرای تنظیم لقب دلخواه: ‎/setlqab <لقب>")
     await message.reply_text("\n".join(lines))
 
 
@@ -935,7 +935,7 @@ async def toplqab_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     titled = list(host._custom_titles[chat.id].items())
     if not titled:
-        await message.reply_text("هنوز هیچکس لقب اختصاصی تنظیم نکرده. با /setlqab شروع کن.")
+        await message.reply_text("هنوز هیچکس لقب اختصاصی تنظیم نکرده. با ‎/setlqab شروع کن.")
         return
     titled.sort(key=lambda kv: host._xp[chat.id].get(kv[0], 0), reverse=True)
     medals = ["🥇", "🥈", "🥉"]

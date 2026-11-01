@@ -836,7 +836,7 @@ async def control_words_handler(update: Update, context: ContextTypes.DEFAULT_TY
             raise ApplicationHandlerStop
         if not get_setting(chat_id, "tag_members_enabled"):
             await message.reply_text(
-                "قابلیت تگ دسته‌جمعی خاموشه. از /menu (بخش «🏷️ تگ دسته‌جمعی اعضا») روشنش کن."
+                "قابلیت تگ دسته‌جمعی خاموشه. از ‎/menu (بخش «🏷️ تگ دسته‌جمعی اعضا») روشنش کن."
             )
             raise ApplicationHandlerStop
         await _run_tag_all(chat_id, context, caption=None)
@@ -1624,8 +1624,10 @@ async def enemy_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /addenemy <آیدی عددی>\n"
-            "برای دشمنی موقت: ریپلای + /addenemy 24h  (یا: /addenemy <آیدی> 24h) - واحدها: m/h/d"
+            "استفاده (یکی از این دو روش):\n"
+            "• روی پیام کاربر ریپلای بزن و بنویس ‎/addenemy [مدت]\n"
+            "• ‎/addenemy <آیدی عددی> [مدت]\n"
+            "مثال: ‎/addenemy 24h  (واحدها: m/h/d — بدون مدت یعنی دائمی)"
         )
         return
     _enemies[chat_id].add(target_id)
@@ -1650,7 +1652,7 @@ async def friend_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /addfriend <آیدی عددی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/addfriend\nیا بدون ریپلای: ‎/addfriend <آیدی عددی>"
         )
         return
     _friends[chat_id].add(target_id)
@@ -1667,7 +1669,7 @@ async def enemy_remove_command(update: Update, context: ContextTypes.DEFAULT_TYP
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /removeenemy <آیدی عددی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/removeenemy\nیا بدون ریپلای: ‎/removeenemy <آیدی عددی>"
         )
         return
     _enemies[chat_id].discard(target_id)
@@ -1684,7 +1686,7 @@ async def friend_remove_command(update: Update, context: ContextTypes.DEFAULT_TY
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /removefriend <آیدی عددی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/removefriend\nیا بدون ریپلای: ‎/removefriend <آیدی عددی>"
         )
         return
     _friends[chat_id].discard(target_id)
@@ -1717,7 +1719,7 @@ async def friends_list_command(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             lines.append(name)
     await update.effective_message.reply_text(
-        "🤝 دوست‌ها:\n" + "\n".join(lines) + "\n\n(برای جزئیات بیشتر: ریپلای + /friendinfo)"
+        "🤝 دوست‌ها:\n" + "\n".join(lines) + "\n\n(برای جزئیات بیشتر: ریپلای + ‎/friendinfo)"
     )
 
 
@@ -1818,7 +1820,7 @@ async def target_mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     args = context.args or []
     if not args or args[0].lower() not in config.TERMINATOR_RESPONSE_MODES:
         await message.reply_text(
-            "استفاده: ریپلای + /targetmode <مد>\nمدهای معتبر: " + ", ".join(config.TERMINATOR_RESPONSE_MODES)
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/targetmode <مد>\nمدهای معتبر: " + ", ".join(config.TERMINATOR_RESPONSE_MODES)
         )
         return
     target = message.reply_to_message.from_user
@@ -1840,7 +1842,7 @@ async def target_cooldown_command(update: Update, context: ContextTypes.DEFAULT_
         return
     args = context.args or []
     if not args or not args[0].isdigit():
-        await message.reply_text("استفاده: ریپلای + /targetcooldown <ثانیه>")
+        await message.reply_text("استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/targetcooldown <ثانیه>\nمثال: ‎/targetcooldown 30")
         return
     target = message.reply_to_message.from_user
     profile = _terminator_get_target(update.effective_chat.id, target)
@@ -1910,7 +1912,7 @@ async def terminator_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         if len(args) < 2 or args[1].lower() not in config.TERMINATOR_RESPONSE_MODES:
             await update.effective_message.reply_text(
-                "استفاده: /terminator mode <مد>\nمدهای معتبر: " + ", ".join(config.TERMINATOR_RESPONSE_MODES)
+                "استفاده: ‎/terminator mode <مد>\nمدهای معتبر: " + ", ".join(config.TERMINATOR_RESPONSE_MODES)
             )
             return
         _terminator_default_mode[chat.id] = args[1].lower()
@@ -1923,13 +1925,13 @@ async def terminator_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     current_mode = "فعال 🟢" if _terminator_mode[chat.id] == "active" else "ساکت 🔇"
     default_mode_label = config.TERMINATOR_MODE_LABELS.get(_terminator_default_mode[chat.id], _terminator_default_mode[chat.id])
     await update.effective_message.reply_text(
-        "☠️ راهنمای دستور /terminator:\n\n"
+        "☠️ راهنمای دستور ‎/terminator:\n\n"
         f"وضعیت فعلی: {current_mode} | مد پیش‌فرض: {default_mode_label}\n\n"
-        "/terminator active — پاسخ‌دهی رو روشن کن\n"
-        "/terminator silent — فقط تشخیص/آمار، بدون پاسخ\n"
-        "/terminator stats — آمار کامل ترمیناتور\n"
-        "/terminator mode <مد> — مد پیش‌فرض پاسخ‌های گروه رو عوض کن\n"
-        "(برای هر Target جدا: ریپلای + /targetmode یا /targetcooldown)\n\n"
+        "‎/terminator active — پاسخ‌دهی رو روشن کن\n"
+        "‎/terminator silent — فقط تشخیص/آمار، بدون پاسخ\n"
+        "‎/terminator stats — آمار کامل ترمیناتور\n"
+        "‎/terminator mode <مد> — مد پیش‌فرض پاسخ‌های گروه رو عوض کن\n"
+        "(برای هر Target جدا: ریپلای + ‎/targetmode یا ‎/targetcooldown)\n\n"
         "کلیدهای مد معتبر: " + ", ".join(config.TERMINATOR_RESPONSE_MODES)
     )
 
@@ -1975,7 +1977,7 @@ async def enemyword_add_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
     word = _get_command_arg_text(update)
     if not word:
-        await update.effective_message.reply_text("استفاده: /addenemyword <کلمه>")
+        await update.effective_message.reply_text("استفاده: ‎/addenemyword <کلمه>\nمثال: ‎/addenemyword اسپم")
         return
     _enemy_trigger_words[update.effective_chat.id].add(word)
     await update.effective_message.reply_text(
@@ -1990,7 +1992,7 @@ async def enemyword_remove_command(update: Update, context: ContextTypes.DEFAULT
         return
     word = _get_command_arg_text(update)
     if not word:
-        await update.effective_message.reply_text("استفاده: /removeenemyword <کلمه>")
+        await update.effective_message.reply_text("استفاده: ‎/removeenemyword <کلمه>\nمثال: ‎/removeenemyword اسپم")
         return
     _enemy_trigger_words[update.effective_chat.id].discard(word)
     await update.effective_message.reply_text(f"«{word}» از کلمات دشمن‌کننده حذف شد.")
@@ -2003,7 +2005,7 @@ async def friendword_add_command(update: Update, context: ContextTypes.DEFAULT_T
         return
     word = _get_command_arg_text(update)
     if not word:
-        await update.effective_message.reply_text("استفاده: /addfriendword <کلمه>")
+        await update.effective_message.reply_text("استفاده: ‎/addfriendword <کلمه>\nمثال: ‎/addfriendword ممنون")
         return
     _friend_trigger_words[update.effective_chat.id].add(word)
     await update.effective_message.reply_text(
@@ -2018,7 +2020,7 @@ async def friendword_remove_command(update: Update, context: ContextTypes.DEFAUL
         return
     word = _get_command_arg_text(update)
     if not word:
-        await update.effective_message.reply_text("استفاده: /removefriendword <کلمه>")
+        await update.effective_message.reply_text("استفاده: ‎/removefriendword <کلمه>\nمثال: ‎/removefriendword ممنون")
         return
     _friend_trigger_words[update.effective_chat.id].discard(word)
     await update.effective_message.reply_text(f"«{word}» از کلمات دوست‌کننده حذف شد.")
@@ -2396,7 +2398,7 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not get_setting(chat.id, "tag_members_enabled"):
         await update.effective_message.reply_text(
-            "قابلیت تگ دسته‌جمعی خاموشه. از /menu (بخش «🏷️ تگ دسته‌جمعی اعضا») روشنش کن."
+            "قابلیت تگ دسته‌جمعی خاموشه. از ‎/menu (بخش «🏷️ تگ دسته‌جمعی اعضا») روشنش کن."
         )
         return
     caption = _get_command_arg_text(update)
@@ -2782,7 +2784,7 @@ async def _set_custom_title(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         return
     new_title = new_title.strip()
     if not new_title:
-        await message.reply_text("استفاده: /setlqab <لقب دلخواه>")
+        await message.reply_text("استفاده: ‎/setlqab <لقب دلخواه>\nمثال: ‎/setlqab شاهزاده")
         return
     if len(new_title) > config.CUSTOM_TITLE_MAX_LENGTH:
         await message.reply_text(f"لقب نباید بیشتر از {config.CUSTOM_TITLE_MAX_LENGTH} کاراکتر باشه.")
@@ -2803,7 +2805,7 @@ async def _set_custom_title(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 async def setlqab_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     arg = _get_command_arg_text(update)
     if not arg:
-        await update.effective_message.reply_text("استفاده: /setlqab <لقب دلخواه>")
+        await update.effective_message.reply_text("استفاده: ‎/setlqab <لقب دلخواه>\nمثال: ‎/setlqab شاهزاده")
         return
     await _set_custom_title(update, context, arg)
 
@@ -2820,7 +2822,7 @@ async def resetlqab_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     target_id, name, _ = _parse_target_and_reason(update)
     if target_id is None:
-        await update.effective_message.reply_text("استفاده: ریپلای رو پیام کاربر بزن و بنویس /resetlqab")
+        await update.effective_message.reply_text("استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/resetlqab\nیا بدون ریپلای: ‎/resetlqab <آیدی عددی/@username>")
         return
     _custom_titles[chat_id].pop(target_id, None)
     await update.effective_message.reply_text(f"لقب {name} ریست شد.")
@@ -2835,7 +2837,7 @@ async def topxp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ranking = sorted(_xp[chat.id].items(), key=lambda kv: kv[1], reverse=True)[: config.TOP_XP_COUNT]
     if not ranking:
         await update.effective_message.reply_text(
-            "هنوز کسی XP نگرفته. مطمئن شو «سیستم XP، Level و پروفایل» توی /menu روشنه."
+            "هنوز کسی XP نگرفته. مطمئن شو «سیستم XP، Level و پروفایل» توی ‎/menu روشنه."
         )
         return
     medals = ["🥇", "🥈", "🥉"]
@@ -2879,7 +2881,7 @@ async def activity_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
         return
     if not get_setting(chat.id, "stats_enabled"):
-        await message.reply_text("آمار فعالیت گروه خاموشه. از /menu بخش «آمار فعالیت گروه» روشنش کن.")
+        await message.reply_text("آمار فعالیت گروه خاموشه. از ‎/menu بخش «آمار فعالیت گروه» روشنش کن.")
         return
 
     uid, name = _resolve_activity_target(update, context)
@@ -3013,7 +3015,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.effective_message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
         return
     if not get_setting(chat.id, "stats_enabled"):
-        await update.effective_message.reply_text("آمار فعالیت گروه خاموشه. از /menu بخش «آمار فعالیت گروه» روشنش کن.")
+        await update.effective_message.reply_text("آمار فعالیت گروه خاموشه. از ‎/menu بخش «آمار فعالیت گروه» روشنش کن.")
         return
 
     args = [a.lower() for a in (context.args or [])]
@@ -3052,7 +3054,7 @@ async def activity_filter_command(update: Update, context: ContextTypes.DEFAULT_
     mode = args[0].lower() if args else ""
     valid = ("inactive", "low", "messages", "xp", "streak", "score")
     if mode not in valid:
-        await update.effective_message.reply_text("استفاده: /activityfilter <" + "|".join(valid) + ">")
+        await update.effective_message.reply_text("استفاده: ‎/activityfilter <" + "|".join(valid) + ">\nمثال: ‎/activityfilter inactive")
         return
 
     members = _known_members[chat.id]
@@ -3102,7 +3104,7 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not chat or chat.type not in ("group", "supergroup"):
         return
     if not get_setting(chat.id, "economy_enabled"):
-        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از /menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
+        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
         return
     message = update.effective_message
     target_user = message.reply_to_message.from_user if message.reply_to_message else update.effective_user
@@ -3116,7 +3118,7 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not chat or chat.type not in ("group", "supergroup"):
         return
     if not get_setting(chat.id, "economy_enabled"):
-        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از /menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
+        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
         return
     user = update.effective_user
     now = time.time()
@@ -3158,7 +3160,7 @@ async def pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not chat or chat.type not in ("group", "supergroup"):
         return
     if not get_setting(chat.id, "economy_enabled"):
-        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از /menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
+        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
         return
     message = update.effective_message
     sender = update.effective_user
@@ -3182,8 +3184,10 @@ async def pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target_id is None or not amount or amount <= 0:
         await message.reply_text(
-            "استفاده: روی پیام کسی ریپلای بزن و بنویس «انتقال سکه <مقدار>» (یا /pay <مقدار>)\n"
-            "یا بدون ریپلای: /pay <آیدی عددی> <مقدار>"
+            "استفاده (یکی از این دو روش):\n"
+            "• روی پیام کاربر ریپلای بزن و بنویس ‎/pay <مقدار>  (یا بنویس «انتقال سکه <مقدار>»)\n"
+            "• ‎/pay <آیدی عددی> <مقدار>\n"
+            "مثال: ‎/pay 500"
         )
         return
     if target_id == sender.id:
@@ -3216,7 +3220,7 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not chat or chat.type not in ("group", "supergroup"):
         return
     if not get_setting(chat.id, "economy_enabled"):
-        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از /menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
+        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
         return
     lines = [f"🛒 فروشگاه گروه (واحد پول: {config.CURRENCY_NAME} {config.CURRENCY_EMOJI})"]
     overrides = _shop_price_overrides[chat.id]
@@ -3236,10 +3240,10 @@ async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not chat or chat.type not in ("group", "supergroup"):
         return
     if not get_setting(chat.id, "economy_enabled"):
-        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از /menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
+        await update.effective_message.reply_text("اقتصاد گروه خاموشه. از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
         return
     if not context.args:
-        await update.effective_message.reply_text("استفاده: /buy <کد آیتم> (لیست آیتم‌ها با /shop)")
+        await update.effective_message.reply_text("استفاده: ‎/buy <کد آیتم>\nکد آیتم‌ها رو با ‎/shop ببین.\nمثال: ‎/buy vip_badge")
         return
     key = context.args[0]
     item = config.SHOP_ITEMS.get(key)
@@ -3255,7 +3259,7 @@ async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if key in economy_inventory.CATALOG:
             await economy_inventory.buy_command(update, context)
             return
-        await update.effective_message.reply_text("همچین آیتمی توی فروشگاه نیست. با /shop لیست رو ببین.")
+        await update.effective_message.reply_text("همچین آیتمی توی فروشگاه نیست. با ‎/shop لیست رو ببین.")
         return
     user = update.effective_user
     is_timed = "duration_hours" in item  # فاز ۲: آیتم‌های زمان‌دار (Boost/VIP) قابل تمدیدن، قابل خرید تکراری
@@ -3328,7 +3332,7 @@ def _last_int_arg(message, allow_negative: bool = False) -> int | None:
 
 async def setcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ادمین موجودی سکه‌ی یه نفر رو دقیقاً روی یه عدد ست می‌کنه.
-    استفاده: ریپلای + /setcoins <مقدار>  یا  /setcoins <آیدی> <مقدار>"""
+    استفاده: روی پیام کاربر ریپلای بزن و بنویس /setcoins <مقدار>  یا بدون ریپلای: /setcoins <آیدی> <مقدار>"""
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
         return
@@ -3339,7 +3343,7 @@ async def setcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = _resolve_target_id(message)
     amount = _last_int_arg(message)
     if target_id is None or amount is None or amount < 0:
-        await message.reply_text("استفاده: ریپلای روی پیام کسی + /setcoins <مقدار>  یا  /setcoins <آیدی> <مقدار>")
+        await message.reply_text("استفاده (یکی از این دو روش):\n• روی پیام کاربر ریپلای بزن و بنویس ‎/setcoins <مقدار>\n• ‎/setcoins <آیدی> <مقدار>\nمثال: ‎/setcoins 1000")
         return
     await economy_core.admin_set_balance(chat.id, target_id, amount,
                                           note="تنظیم دستی موجودی توسط ادمین",
@@ -3351,7 +3355,7 @@ async def setcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def addcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ادمین یه مقدار (می‌تونه منفی هم باشه) به سکه‌ی یه نفر اضافه/کم می‌کنه.
-    استفاده: ریپلای + /addcoins <مقدار>  یا  /addcoins <آیدی> <مقدار>"""
+    استفاده: روی پیام کاربر ریپلای بزن و بنویس /addcoins <مقدار>  یا بدون ریپلای: /addcoins <آیدی> <مقدار>"""
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
         return
@@ -3362,7 +3366,7 @@ async def addcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = _resolve_target_id(message)
     delta = _last_int_arg(message, allow_negative=True)
     if target_id is None or delta is None:
-        await message.reply_text("استفاده: ریپلای روی پیام کسی + /addcoins <مقدار>  یا  /addcoins <آیدی> <مقدار>")
+        await message.reply_text("استفاده (یکی از این دو روش):\n• روی پیام کاربر ریپلای بزن و بنویس ‎/addcoins <مقدار>\n• ‎/addcoins <آیدی> <مقدار>\nمثال: ‎/addcoins -200  (مقدار منفی هم قابل‌استفاده است)")
         return
     await economy_core.admin_adjust_balance(chat.id, target_id, delta,
                                              note="تنظیم دستی موجودی توسط ادمین",
@@ -3382,7 +3386,7 @@ async def setcoinsall_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     raw = _normalize_digits(" ".join(context.args or []))
     if not raw.isdigit():
-        await update.effective_message.reply_text("استفاده: /setcoinsall <مقدار>")
+        await update.effective_message.reply_text("استفاده: ‎/setcoinsall <مقدار>\nمثال: ‎/setcoinsall 1000")
         return
     amount = int(raw)
     members = _known_members[chat.id]
@@ -3406,7 +3410,7 @@ async def addcoinsall_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     raw = _normalize_digits(" ".join(context.args or []))
     numbers = re.findall(r"-?\d+", raw)
     if not numbers:
-        await update.effective_message.reply_text("استفاده: /addcoinsall <مقدار>")
+        await update.effective_message.reply_text("استفاده: ‎/addcoinsall <مقدار>\nمثال: ‎/addcoinsall 500")
         return
     delta = int(numbers[0])
     members = _known_members[chat.id]
@@ -3429,7 +3433,7 @@ async def setxp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = _resolve_target_id(message)
     amount = _last_int_arg(message)
     if target_id is None or amount is None or amount < 0:
-        await message.reply_text("استفاده: ریپلای روی پیام کسی + /setxp <مقدار>  یا  /setxp <آیدی> <مقدار>")
+        await message.reply_text("استفاده (یکی از این دو روش):\n• روی پیام کاربر ریپلای بزن و بنویس ‎/setxp <مقدار>\n• ‎/setxp <آیدی> <مقدار>\nمثال: ‎/setxp 5000")
         return
     _xp[chat.id][target_id] = amount
     name = _user_display_names.get(target_id, str(target_id))
@@ -3450,7 +3454,7 @@ async def addxp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = _resolve_target_id(message)
     delta = _last_int_arg(message, allow_negative=True)
     if target_id is None or delta is None:
-        await message.reply_text("استفاده: ریپلای روی پیام کسی + /addxp <مقدار>  یا  /addxp <آیدی> <مقدار>")
+        await message.reply_text("استفاده (یکی از این دو روش):\n• روی پیام کاربر ریپلای بزن و بنویس ‎/addxp <مقدار>\n• ‎/addxp <آیدی> <مقدار>\nمثال: ‎/addxp -100  (مقدار منفی هم قابل‌استفاده است)")
         return
     _xp[chat.id][target_id] = max(0, _xp[chat.id].get(target_id, 0) + delta)
     name = _user_display_names.get(target_id, str(target_id))
@@ -3469,7 +3473,7 @@ async def setxpall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     raw = _normalize_digits(" ".join(context.args or []))
     if not raw.isdigit():
-        await update.effective_message.reply_text("استفاده: /setxpall <مقدار>")
+        await update.effective_message.reply_text("استفاده: ‎/setxpall <مقدار>\nمثال: ‎/setxpall 5000")
         return
     amount = int(raw)
     members = _known_members[chat.id]
@@ -3490,7 +3494,7 @@ async def addxpall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = _normalize_digits(" ".join(context.args or []))
     numbers = re.findall(r"-?\d+", raw)
     if not numbers:
-        await update.effective_message.reply_text("استفاده: /addxpall <مقدار>")
+        await update.effective_message.reply_text("استفاده: ‎/addxpall <مقدار>\nمثال: ‎/addxpall 100")
         return
     delta = int(numbers[0])
     members = _known_members[chat.id]
@@ -3512,7 +3516,7 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = _resolve_target_id(message)
     level = _last_int_arg(message)
     if target_id is None or level is None or level < 0:
-        await message.reply_text("استفاده: ریپلای روی پیام کسی + /setlevel <لول>  یا  /setlevel <آیدی> <لول>")
+        await message.reply_text("استفاده (یکی از این دو روش):\n• روی پیام کاربر ریپلای بزن و بنویس ‎/setlevel <لول>\n• ‎/setlevel <آیدی> <لول>\nمثال: ‎/setlevel 10")
         return
     _xp[chat.id][target_id] = level * config.XP_PER_LEVEL
     name = _user_display_names.get(target_id, str(target_id))
@@ -3530,7 +3534,7 @@ async def setlevelall_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     raw = _normalize_digits(" ".join(context.args or []))
     if not raw.isdigit():
-        await update.effective_message.reply_text("استفاده: /setlevelall <لول>")
+        await update.effective_message.reply_text("استفاده: ‎/setlevelall <لول>\nمثال: ‎/setlevelall 10")
         return
     level = int(raw)
     members = _known_members[chat.id]
@@ -3547,7 +3551,7 @@ _ECON_SETTING_KEYS = (
 
 async def seteco_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تنظیمات خودکار اقتصاد این گروه (پاداش روزانه، سکه‌ی فعالیت، XP هر پیام، مدت پیش‌فرض
-    قرعه‌کشی) رو نشون می‌ده یا تغییر می‌ده. استفاده: /seteco  (نمایش) یا  /seteco <کلید> <عدد>"""
+    قرعه‌کشی) رو نشون می‌ده یا تغییر می‌ده.\n    استفاده: /seteco  (نمایش)  یا  /seteco <کلید> <عدد>"""
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
         return
@@ -3558,7 +3562,7 @@ async def seteco_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args or []) < 2:
         lines = ["⚙️ تنظیمات فعلی اقتصاد خودکار این گروه:"]
         lines += [f"• {k} = {v}" for k, v in es.items()]
-        lines.append("\nبرای تغییر: /seteco <کلید> <عدد>\nکلیدهای مجاز: " + ", ".join(_ECON_SETTING_KEYS))
+        lines.append("\nبرای تغییر: ‎/seteco <کلید> <عدد>\nکلیدهای مجاز: " + ", ".join(_ECON_SETTING_KEYS))
         await update.effective_message.reply_text("\n".join(lines))
         return
     key = context.args[0]
@@ -3575,7 +3579,7 @@ async def seteco_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def setshopprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """قیمت یه آیتم فروشگاه رو فقط برای این گروه عوض می‌کنه. استفاده: /setshopprice <کد آیتم> <قیمت>"""
+    """قیمت یه آیتم فروشگاه رو فقط برای این گروه عوض می‌کنه.\n    استفاده: /setshopprice <کد آیتم> <قیمت جدید>"""
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
         return
@@ -3585,7 +3589,7 @@ async def setshopprice_command(update: Update, context: ContextTypes.DEFAULT_TYP
     args = context.args or []
     if len(args) < 2 or args[0] not in config.SHOP_ITEMS:
         await update.effective_message.reply_text(
-            "استفاده: /setshopprice <کد آیتم> <قیمت جدید>\nکدهای موجود: " + ", ".join(config.SHOP_ITEMS)
+            "استفاده: ‎/setshopprice <کد آیتم> <قیمت جدید>\nکدهای موجود: " + ", ".join(config.SHOP_ITEMS)
         )
         return
     raw = _normalize_digits(args[1])
@@ -3630,13 +3634,13 @@ async def poll_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not chat or chat.type not in ("group", "supergroup"):
         return
     if not get_setting(chat.id, "poll_enabled"):
-        await update.effective_message.reply_text("نظرسنجی خاموشه. از /menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
+        await update.effective_message.reply_text("نظرسنجی خاموشه. از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کن.")
         return
     arg = _get_command_arg_text(update)
     if not arg:
         await update.effective_message.reply_text(
-            "استفاده: /poll <سوال> | <گزینه۱> | <گزینه۲> ...\n"
-            "یا فقط: /poll <سوال> (پیش‌فرض بله/خیر)\n\n"
+            "استفاده: ‎/poll <سوال> | <گزینه۱> | <گزینه۲> ...\n"
+            "یا فقط: ‎/poll <سوال> (پیش‌فرض بله/خیر)\n\n"
             "تنظیمات اختیاری (هرکدوم رو با | اضافه کن):\n"
             f"• زمان:<مدت> — مثلاً زمان:1h — {config.POLL_DURATION_EXAMPLES}\n"
             "• ناشناس — رأی‌دهنده‌ها مخفی می‌مونن\n"
@@ -4047,7 +4051,7 @@ async def welcome_toggle_command(update: Update, context: ContextTypes.DEFAULT_T
     args = [a.lower() for a in (context.args or [])]
     if not args or args[0] not in ("on", "off", "روشن", "خاموش"):
         state_now = "روشنه ✅" if _chat_settings[chat.id].get("welcome_enabled", False) else "خاموشه ❌"
-        await update.effective_message.reply_text(f"وضعیت فعلی خوش‌آمدگویی: {state_now}\nاستفاده: /welcome on یا /welcome off")
+        await update.effective_message.reply_text(f"وضعیت فعلی خوش‌آمدگویی: {state_now}\nاستفاده: ‎/welcome on یا ‎/welcome off")
         return
     new_state = args[0] in ("on", "روشن")
     _chat_settings[chat.id]["welcome_enabled"] = new_state
@@ -4067,7 +4071,7 @@ async def leave_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYP
     args = [a.lower() for a in (context.args or [])]
     if not args or args[0] not in ("on", "off", "روشن", "خاموش"):
         state_now = "روشنه ✅" if _chat_settings[chat.id].get("leave_enabled", False) else "خاموشه ❌"
-        await update.effective_message.reply_text(f"وضعیت فعلی پیام ترک گروه: {state_now}\nاستفاده: /leave on یا /leave off")
+        await update.effective_message.reply_text(f"وضعیت فعلی پیام ترک گروه: {state_now}\nاستفاده: ‎/leave on یا ‎/leave off")
         return
     new_state = args[0] in ("on", "روشن")
     _chat_settings[chat.id]["leave_enabled"] = new_state
@@ -4153,7 +4157,10 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name, reason = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /warn <آیدی> [دلیل اختیاری]"
+            "استفاده (یکی از این دو روش):\n"
+            "• روی پیام کاربر ریپلای بزن و بنویس ‎/warn [دلیل اختیاری]\n"
+            "• ‎/warn <آیدی عددی/@username> [دلیل اختیاری]\n"
+            "مثال: ‎/warn 123456789 تبلیغ در گروه"
         )
         return
     await _warn_and_maybe_mute(
@@ -4169,7 +4176,7 @@ async def setwarnlimit_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     if not context.args or not context.args[0].isdigit() or int(context.args[0]) < 1:
         await update.effective_message.reply_text(
-            f"استفاده: /setwarnlimit <عدد بزرگ‌تر از صفر>\nمقدار فعلی: {_warn_limit[update.effective_chat.id]}"
+            f"استفاده: ‎/setwarnlimit <عدد بزرگ‌تر از صفر>\nمقدار فعلی: {_warn_limit[update.effective_chat.id]}"
         )
         return
     value = int(context.args[0])
@@ -4186,7 +4193,7 @@ async def setmutetime_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     if not context.args or not context.args[0].isdigit() or int(context.args[0]) < 1:
         await update.effective_message.reply_text(
-            f"استفاده: /setmutetime <عدد به دقیقه، بزرگ‌تر از صفر>\nمقدار فعلی: {_mute_minutes[update.effective_chat.id]} دقیقه"
+            f"استفاده: ‎/setmutetime <عدد به دقیقه، بزرگ‌تر از صفر>\nمقدار فعلی: {_mute_minutes[update.effective_chat.id]} دقیقه"
         )
         return
     value = int(context.args[0])
@@ -4205,7 +4212,10 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name, extra = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /mute <آیدی/@username> [10m|2h|7d] [دلیل]"
+            "استفاده (یکی از این دو روش):\n"
+            "• روی پیام کاربر ریپلای بزن و بنویس ‎/mute [10m|2h|7d] [دلیل]\n"
+            "• ‎/mute <آیدی عددی/@username> [10m|2h|7d] [دلیل]\n"
+            "مثال: ‎/mute 2h اسپم"
         )
         return
     if moderation_engine.is_protected(chat_id, target_id):
@@ -4244,7 +4254,7 @@ async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name, _ = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /unmute <آیدی/@username>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/unmute\nیا بدون ریپلای: ‎/unmute <آیدی عددی/@username>"
         )
         return
     result = await moderation_engine.unmute(
@@ -4265,7 +4275,7 @@ async def resetwarnings_command(update: Update, context: ContextTypes.DEFAULT_TY
     target_id, name, _ = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /resetwarnings <آیدی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/resetwarnings\nیا بدون ریپلای: ‎/resetwarnings <آیدی عددی/@username>"
         )
         return
     _warnings[chat_id][target_id] = 0
@@ -4285,7 +4295,7 @@ async def unwarn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name, _ = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /unwarn <آیدی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/unwarn\nیا بدون ریپلای: ‎/unwarn <آیدی عددی/@username>"
         )
         return
     if _warning_expiry[chat_id][target_id]:
@@ -4341,7 +4351,10 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name, extra = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /ban <آیدی/@username> [7d|30d] [دلیل]"
+            "استفاده (یکی از این دو روش):\n"
+            "• روی پیام کاربر ریپلای بزن و بنویس ‎/ban [7d|30d] [دلیل]\n"
+            "• ‎/ban <آیدی عددی/@username> [7d|30d] [دلیل]\n"
+            "مثال: ‎/ban 7d تبلیغ مکرر"
         )
         return
     if moderation_engine.is_protected(chat_id, target_id):
@@ -4378,7 +4391,7 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     target_id, name, _ = _parse_target_and_reason(update)
     if target_id is None:
-        await update.effective_message.reply_text("استفاده: /unban <آیدی عددی/@username>")
+        await update.effective_message.reply_text("استفاده: ‎/unban <آیدی عددی/@username>\nمثال: ‎/unban 123456789")
         return
     result = await moderation_engine.unban(
         context, chat_id, target_id, name,
@@ -4504,7 +4517,10 @@ async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name, title = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /promote <آیدی> [لقب دلخواه]"
+            "استفاده (یکی از این دو روش):\n"
+            "• روی پیام کاربر ریپلای بزن و بنویس ‎/promote [لقب دلخواه]\n"
+            "• ‎/promote <آیدی عددی/@username> [لقب دلخواه]\n"
+            "مثال: ‎/promote 123456789 مدیر ارشد"
         )
         return
 
@@ -4562,7 +4578,7 @@ async def demote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name, _ = _parse_target_and_reason(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /demote <آیدی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/demote\nیا بدون ریپلای: ‎/demote <آیدی عددی/@username>"
         )
         return
     try:
@@ -4623,7 +4639,7 @@ async def vip_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /addvip <آیدی عددی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/addvip\nیا بدون ریپلای: ‎/addvip <آیدی عددی>"
         )
         return
     _vip_users[chat_id].add(target_id)
@@ -4639,7 +4655,7 @@ async def vip_remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /removevip <آیدی عددی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/removevip\nیا بدون ریپلای: ‎/removevip <آیدی عددی>"
         )
         return
     _vip_users[chat_id].discard(target_id)
@@ -4742,7 +4758,7 @@ async def blacklist_add_command(update: Update, context: ContextTypes.DEFAULT_TY
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /blacklist_add <آیدی عددی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/blacklist_add\nیا بدون ریپلای: ‎/blacklist_add <آیدی عددی>"
         )
         return
     _blacklist[chat_id].add(target_id)
@@ -4758,7 +4774,7 @@ async def blacklist_remove_command(update: Update, context: ContextTypes.DEFAULT
     target_id, name = _parse_target_from_command(update)
     if target_id is None:
         await update.effective_message.reply_text(
-            "استفاده: ریپلای رو پیام کاربر بزن، یا: /blacklist_remove <آیدی عددی>"
+            "استفاده: روی پیام کاربر ریپلای بزن و بنویس ‎/blacklist_remove\nیا بدون ریپلای: ‎/blacklist_remove <آیدی عددی>"
         )
         return
     _blacklist[chat_id].discard(target_id)
@@ -5312,149 +5328,149 @@ HELP_HEADER = (
 HELP_SECTIONS = {
     "general": ("🌐 همگانی", False,
         "┏━━━『 🌐 همگانی 』━━━┓\n"
-        "┃ /start «شروع» • /help «راهنما»\n"
-        "┃ /stats «آمار» • /top «فعال ترین ها»\n"
-        "┃ /groupstats «آمار گروه»\n"
-        "┃ /relations «روابط» › یکجای دوست/دشمن\n"
-        "┃ /enemies «دشمن ها» • /friends «دوست ها»\n"
-        "┃ /enemywords «کلمات دشمن»\n"
-        "┃ /friendwords «کلمات دوست»\n"
-        "┃ /warnings «اخطارهای من»\n"
-        "┃ /muted «میوت شده ها» • /banlist «لیست بن»\n"
-        "┃ /viplist «لیست وی آی پی»\n"
-        "┃ /joke «جوک» • /fortune «فال»\n"
+        "┃ ‎/start «شروع» • ‎/help «راهنما»\n"
+        "┃ ‎/stats «آمار» • ‎/top «فعال ترین ها»\n"
+        "┃ ‎/groupstats «آمار گروه»\n"
+        "┃ ‎/relations «روابط» › یکجای دوست/دشمن\n"
+        "┃ ‎/enemies «دشمن ها» • ‎/friends «دوست ها»\n"
+        "┃ ‎/enemywords «کلمات دشمن»\n"
+        "┃ ‎/friendwords «کلمات دوست»\n"
+        "┃ ‎/warnings «اخطارهای من»\n"
+        "┃ ‎/muted «میوت شده ها» • ‎/banlist «لیست بن»\n"
+        "┃ ‎/viplist «لیست وی آی پی»\n"
+        "┃ ‎/joke «جوک» • ‎/fortune «فال»\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "activity": ("📊 فعالیت هوشمند", False,
         "┏━━━『 📊 𝐒𝐌𝐀𝐑𝐓 𝐀𝐂𝐓𝐈𝐕𝐈𝐓𝐘 』━━━┓\n"
-        "┃ /activity «فعالیت من» [@یوزرنیم|آیدی]\n"
+        "┃ ‎/activity «فعالیت من» [@یوزرنیم|آیدی]\n"
         "┃ › XP، لول، رتبه، Streak، امتیاز، الگوی رفتاری\n"
-        "┃ /leaderboard «برترین های فعالیت»\n"
+        "┃ ‎/leaderboard «برترین های فعالیت»\n"
         "┃ [today|week|month|alltime] [messages|xp|score]\n"
-        "┃ /achievements «دستاوردهای من» [@یوزرنیم|آیدی]\n"
-        "┃ /activityfilter «فیلتر فعالیت» (ادمین)\n"
+        "┃ ‎/achievements «دستاوردهای من» [@یوزرنیم|آیدی]\n"
+        "┃ ‎/activityfilter «فیلتر فعالیت» (ادمین)\n"
         "┃ inactive|low|messages|xp|streak|score\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "profile": ("👤 پروفایل • XP • لقب", False,
         "┏━━━『 👤 پروفایل • XP • لقب 』━━━┓\n"
-        "┃ /profile «پروفایل من» › پروفایل کامل\n"
-        "┃ /rank «رتبه من» • /level «سطح من»\n"
-        "┃ /toplevel «برترین ها» › بر اساس XP\n"
-        "┃ /setlqab «تنظیم لقب» <لقب>\n"
-        "┃ /removelqab «حذف لقب»\n"
-        "┃ /lqab «لقب» • /toplqab «لیست لقب ها»\n"
-        "┃ /rep «احترام» <ریپلای>\n"
+        "┃ ‎/profile «پروفایل من» › پروفایل کامل\n"
+        "┃ ‎/rank «رتبه من» • ‎/level «سطح من»\n"
+        "┃ ‎/toplevel «برترین ها» › بر اساس XP\n"
+        "┃ ‎/setlqab «تنظیم لقب» <لقب>\n"
+        "┃ ‎/removelqab «حذف لقب»\n"
+        "┃ ‎/lqab «لقب» • ‎/toplqab «لیست لقب ها»\n"
+        "┃ ‎/rep «احترام» <ریپلای>\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "poll": ("🗳️ نظرسنجی • قرعه‌کشی", False,
         "┏━━━『 🗳️ نظرسنجی • قرعه‌کشی 』━━━┓\n"
-        "┃ /poll «نظرسنجی جدید» <سوال> | <گزینه۱> | ...\n"
+        "┃ ‎/poll «نظرسنجی جدید» <سوال> | <گزینه۱> | ...\n"
         "┃ › بدون گزینه = بله / خیر\n"
-        "┃ /pollclose «بستن نظرسنجی»\n"
-        "┃ /polldelete «حذف نظرسنجی»\n"
-        "┃ /pollreopen «بازکردن نظرسنجی»\n"
-        "┃ /pollvoters «رای دهندگان»\n"
-        "┃ /pollhide «مخفی نظرسنجی»\n"
-        "┃ /pollhistory «تاریخچه نظرسنجی»\n"
-        "┃ /lottery «قرعه کشی» [دقیقه] [جایزه]\n"
-        "┃ /lottery_end «پایان قرعه کشی»\n"
+        "┃ ‎/pollclose «بستن نظرسنجی»\n"
+        "┃ ‎/polldelete «حذف نظرسنجی»\n"
+        "┃ ‎/pollreopen «بازکردن نظرسنجی»\n"
+        "┃ ‎/pollvoters «رای دهندگان»\n"
+        "┃ ‎/pollhide «مخفی نظرسنجی»\n"
+        "┃ ‎/pollhistory «تاریخچه نظرسنجی»\n"
+        "┃ ‎/lottery «قرعه کشی» [دقیقه] [جایزه]\n"
+        "┃ ‎/lottery_end «پایان قرعه کشی»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "friend_enemy": ("⚔️ دوست • دشمن", False,
         "┏━━━『 ⚔️ دوست • دشمن 』━━━┓\n"
-        "┃ /addenemy «دشمن کن» • /addfriend «دوست کن»\n"
-        "┃ /removeenemy «لغو دشمن کن»\n"
-        "┃ /removefriend «لغو دوست کن»\n"
-        "┃ /addenemyword «اضافه کلمه دشمن»\n"
-        "┃ /removeenemyword «حذف کلمه دشمن»\n"
-        "┃ /addfriendword «اضافه کلمه دوست»\n"
-        "┃ /removefriendword «حذف کلمه دوست»\n"
+        "┃ ‎/addenemy «دشمن کن» • ‎/addfriend «دوست کن»\n"
+        "┃ ‎/removeenemy «لغو دشمن کن»\n"
+        "┃ ‎/removefriend «لغو دوست کن»\n"
+        "┃ ‎/addenemyword «اضافه کلمه دشمن»\n"
+        "┃ ‎/removeenemyword «حذف کلمه دشمن»\n"
+        "┃ ‎/addfriendword «اضافه کلمه دوست»\n"
+        "┃ ‎/removefriendword «حذف کلمه دوست»\n"
         "┃ › ریپلای + «دشمن»/«دوست» هم ثبت می‌کنه\n"
         "┃ › دشمنی موقت: «دشمن 24h» (واحد m/h/d)\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "welcome": ("👋 ورود • خروج", False,
         "┏━━━『 👋 ورود • خروج 』━━━┓\n"
-        "┃ /welcome «خوشامد» on|off\n"
-        "┃ /leave «ترک» on|off\n"
-        "┃ /welcome_theme «تم خوشامد» [کلید تم]\n"
-        "┃ /welcome_text «متن خوشامد» <متن یا «ریست»>\n"
-        "┃ /leave_text «متن ترک» <متن یا «ریست»>\n"
+        "┃ ‎/welcome «خوشامد» on|off\n"
+        "┃ ‎/leave «ترک» on|off\n"
+        "┃ ‎/welcome_theme «تم خوشامد» [کلید تم]\n"
+        "┃ ‎/welcome_text «متن خوشامد» <متن یا «ریست»>\n"
+        "┃ ‎/leave_text «متن ترک» <متن یا «ریست»>\n"
         "┃ جای‌گزین‌های متن: {full_name} {username_line}\n"
         "┃ {user_id} {date} {time} {member_count}\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "tag": ("🏷️ تگ دسته‌جمعی", False,
         "┏━━━『 🏷️ تگ دسته‌جمعی 』━━━┓\n"
-        "┃ /tag «تگ» [متن دلخواه]\n"
+        "┃ ‎/tag «تگ» [متن دلخواه]\n"
         "┃ › یا نوشتن «تگ همه»\n"
-        "┃ ⚠️ فعال‌سازی از /menu\n"
+        "┃ ⚠️ فعال‌سازی از ‎/menu\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "modctl": ("👮 مدیریت کاربر", True,
         "┏━━━『 👮 مدیریت کاربر 』━━━┓\n"
-        "┃ /warn «اخطار» • /unwarn «لغو اخطار»\n"
-        "┃ /resetwarnings «ریست اخطارها»\n"
-        "┃ /setwarnlimit «تنظیم حد اخطار» <عدد>\n"
-        "┃ /setmutetime «تنظیم مدت میوت» <دقیقه>\n"
-        "┃ /mute «سکوت» • /unmute «رفع سکوت»\n"
+        "┃ ‎/warn «اخطار» • ‎/unwarn «لغو اخطار»\n"
+        "┃ ‎/resetwarnings «ریست اخطارها»\n"
+        "┃ ‎/setwarnlimit «تنظیم حد اخطار» <عدد>\n"
+        "┃ ‎/setmutetime «تنظیم مدت میوت» <دقیقه>\n"
+        "┃ ‎/mute «سکوت» • ‎/unmute «رفع سکوت»\n"
         "┃ › «سکوت ۲۶» با ریپلای\n"
-        "┃ /ban «بن» • /unban «رفع بن»\n"
-        "┃ /clearbanlist «پاک کردن لیست بن»\n"
-        "┃ /addvip «وی‌آی‌پی کن» • /removevip «حذف وی‌آی‌پی»\n"
-        "┃ /blacklist_add «افزودن لیست سیاه»\n"
-        "┃ /blacklist_remove «حذف لیست سیاه»\n"
+        "┃ ‎/ban «بن» • ‎/unban «رفع بن»\n"
+        "┃ ‎/clearbanlist «پاک کردن لیست بن»\n"
+        "┃ ‎/addvip «وی‌آی‌پی کن» • ‎/removevip «حذف وی‌آی‌پی»\n"
+        "┃ ‎/blacklist_add «افزودن لیست سیاه»\n"
+        "┃ ‎/blacklist_remove «حذف لیست سیاه»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "adminx": ("👑 ادمین‌ها", True,
         "┏━━━『 👑 ادمین‌ها 』━━━┓\n"
-        "┃ /promote «ارتقا» <آیدی یا ریپلای> [لقب]\n"
-        "┃ /demote «عزل» <آیدی یا ریپلای>\n"
+        "┃ ‎/promote «ارتقا» <آیدی یا ریپلای> [لقب]\n"
+        "┃ ‎/demote «عزل» <آیدی یا ریپلای>\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "group": ("🧹 گروه", True,
         "┏━━━『 🧹 گروه 』━━━┓\n"
-        "┃ /purge «پاکسازی» › راهنمای کامل: /purge help\n"
-        "┃ /purgeuser «پاکسازی کاربر» (ریپلای)\n"
-        "┃ /purgestats «آمار پاکسازی»\n"
-        "┃ /newlink «لینک جدید»\n"
-        "┃ /notify «اطلاعیه» <متن>\n"
-        "┃ /groups «لیست گروه ها»\n"
+        "┃ ‎/purge «پاکسازی» › راهنمای کامل: ‎/purge help\n"
+        "┃ ‎/purgeuser «پاکسازی کاربر» (ریپلای)\n"
+        "┃ ‎/purgestats «آمار پاکسازی»\n"
+        "┃ ‎/newlink «لینک جدید»\n"
+        "┃ ‎/notify «اطلاعیه» <متن>\n"
+        "┃ ‎/groups «لیست گروه ها»\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "terminator": ("☠️ Terminator 2.0", True,
         "┏━━━『 ☠️ TERMINATOR 2.0 』━━━┓\n"
-        "┃ /terminator «ترمیناتور» active|silent|stats|mode\n"
-        "┃ /enemyinfo «اطلاعات دشمن» <ریپلای>\n"
-        "┃ /friendinfo «اطلاعات دوست» <ریپلای>\n"
-        "┃ /targetmode «مد هدف» <ریپلای> <مد>\n"
-        "┃ /targetcooldown «کول داون هدف» <ریپلای> <ثانیه>\n"
+        "┃ ‎/terminator «ترمیناتور» active|silent|stats|mode\n"
+        "┃ ‎/enemyinfo «اطلاعات دشمن» <ریپلای>\n"
+        "┃ ‎/friendinfo «اطلاعات دوست» <ریپلای>\n"
+        "┃ ‎/targetmode «مد هدف» <ریپلای> <مد>\n"
+        "┃ ‎/targetcooldown «کول داون هدف» <ریپلای> <ثانیه>\n"
         "┃ مدها: sarcastic, funny, cold, smart, roast, random\n"
-        "┃ AI هوشمند: /menu → «دوست/دشمن» → «پاسخ هوشمند AI»\n"
+        "┃ AI هوشمند: ‎/menu → «دوست/دشمن» → «پاسخ هوشمند AI»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "locks": ("🔒 قفل‌ها • ضداسپم", True,
         "┏━━━『 🔒 قفل‌ها • ضداسپم 』━━━┓\n"
-        "┃ /lock «قفل» • /unlock «بازکردن قفل»\n"
-        "┃ /locks «لیست قفل ها» • /lockinfo «اطلاعات قفل»\n"
-        "┃ /lockstats «آمار قفل» • /lockconfig «تنظیم قفل»\n"
-        "┃ /lockprofile «پروفایل قفل» • /lockcheck «چک دسترسی»\n"
-        "┃ /antispam «ضد اسپم» • /antibot «ضد بات»\n"
-        "┃ /captcha «کپچا» • /raid «ضد ریید»\n"
-        "┃ /security «امنیت» • /security_user «امنیت کاربر»\n"
-        "┃ /spamconfig «تنظیم اسپم» • /spamstats «آمار اسپم»\n"
-        "┃ /whitelist «لیست سفید» • /spamblacklist «لیست سیاه»\n"
+        "┃ ‎/lock «قفل» • ‎/unlock «بازکردن قفل»\n"
+        "┃ ‎/locks «لیست قفل ها» • ‎/lockinfo «اطلاعات قفل»\n"
+        "┃ ‎/lockstats «آمار قفل» • ‎/lockconfig «تنظیم قفل»\n"
+        "┃ ‎/lockprofile «پروفایل قفل» • ‎/lockcheck «چک دسترسی»\n"
+        "┃ ‎/antispam «ضد اسپم» • ‎/antibot «ضد بات»\n"
+        "┃ ‎/captcha «کپچا» • ‎/raid «ضد ریید»\n"
+        "┃ ‎/security «امنیت» • ‎/security_user «امنیت کاربر»\n"
+        "┃ ‎/spamconfig «تنظیم اسپم» • ‎/spamstats «آمار اسپم»\n"
+        "┃ ‎/whitelist «لیست سفید» • ‎/spamblacklist «لیست سیاه»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "econ_admin_manual": ("🛠 پنل دستی سکه/XP", True,
         "┏━━━『 🛠 پنل ویژه ادمین 』━━━┓\n"
-        "┃ /setcoins «تنظیم سکه» • /addcoins «افزودن سکه»\n"
-        "┃ /setcoinsall «تنظیم سکه همه» • /addcoinsall\n"
-        "┃ /setxp «تنظیم XP» • /addxp «افزودن XP»\n"
-        "┃ /setxpall «تنظیم XP همه» • /addxpall\n"
-        "┃ /setlevel «تنظیم لول» • /setlevelall\n"
-        "┃ /seteco «تنظیم اقتصاد» [کلید عدد]\n"
-        "┃ /setshopprice «تنظیم قیمت فروشگاه» <کد> <قیمت>\n"
+        "┃ ‎/setcoins «تنظیم سکه» • ‎/addcoins «افزودن سکه»\n"
+        "┃ ‎/setcoinsall «تنظیم سکه همه» • ‎/addcoinsall\n"
+        "┃ ‎/setxp «تنظیم XP» • ‎/addxp «افزودن XP»\n"
+        "┃ ‎/setxpall «تنظیم XP همه» • ‎/addxpall\n"
+        "┃ ‎/setlevel «تنظیم لول» • ‎/setlevelall\n"
+        "┃ ‎/seteco «تنظیم اقتصاد» [کلید عدد]\n"
+        "┃ ‎/setshopprice «تنظیم قیمت فروشگاه» <کد> <قیمت>\n"
         "┃ ⚠️ فقط با دسترسی manage_economy\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "reports": ("📋 مدیریت پیشرفته", True,
         "┏━━━『 📋 مدیریت پیشرفته • گزارش‌ها 』━━━┓\n"
-        "┃ /modhistory «تاریخچه مدیریت» <ریپلای>\n"
-        "┃ /modstats «آمار مدیریت»\n"
-        "┃ /mutes «لیست میوت های فعال»\n"
-        "┃ /bans «لیست بن های فعال»\n"
-        "┃ /setmodconfig «تنظیمات مدیریت»\n"
-        "┃ /giveitem «دادن آیتم» • /removeitem «حذف آیتم»\n"
-        "┃ /adminpanel «پنل ادمین»\n"
+        "┃ ‎/modhistory «تاریخچه مدیریت» <ریپلای>\n"
+        "┃ ‎/modstats «آمار مدیریت»\n"
+        "┃ ‎/mutes «لیست میوت های فعال»\n"
+        "┃ ‎/bans «لیست بن های فعال»\n"
+        "┃ ‎/setmodconfig «تنظیمات مدیریت»\n"
+        "┃ ‎/giveitem «دادن آیتم» • ‎/removeitem «حذف آیتم»\n"
+        "┃ ‎/adminpanel «پنل ادمین»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
 }
 
@@ -5462,141 +5478,141 @@ HELP_SECTIONS = {
 ECONOMY_SECTIONS = {
     "eco_basic": ("🛍️ فروشگاه پایه", False,
         "┏━━━『 🛍️ فروشگاه و کیف‌پول پایه 』━━━┓\n"
-        "┃ /balance «موجودی من» • /daily «روزانه»\n"
-        "┃ /pay «انتقال» <مقدار> (ریپلای یا آیدی)\n"
-        "┃ /shop «فروشگاه» • /buy «خرید» <کد آیتم>\n"
-        "┃ /myitems «آیتم های من» یا «کیف»/«اینونتوری»\n"
-        "┃ /transactions «تراکنش ها»\n"
-        "┃ /economystats «آمار اقتصاد»\n"
+        "┃ ‎/balance «موجودی من» • ‎/daily «روزانه»\n"
+        "┃ ‎/pay «انتقال» <مقدار> (ریپلای یا آیدی)\n"
+        "┃ ‎/shop «فروشگاه» • ‎/buy «خرید» <کد آیتم>\n"
+        "┃ ‎/myitems «آیتم های من» یا «کیف»/«اینونتوری»\n"
+        "┃ ‎/transactions «تراکنش ها»\n"
+        "┃ ‎/economystats «آمار اقتصاد»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_income": ("💵 درآمد و شغل", False,
         "┏━━━『 💵 درآمد و شغل 』━━━┓\n"
-        "┃ /work «کار» یا «هاپ هاپ»\n"
-        "┃ /income «درآمد» › وضعیت امروز\n"
-        "┃ /salary «حقوق» › دریافت حقوق شغل\n"
-        "┃ /jobs «مشاغل» › لیست شغل‌ها\n"
-        "┃ /job «شغل» › وضعیت شغل فعلی\n"
-        "┃ /choosejob «انتخاب شغل» <نام>\n"
-        "┃ /quitjob «ترک شغل»\n"
-        "┃ /joblevel «سطح شغل» یا «ارتقای شغل»\n"
+        "┃ ‎/work «کار» یا «هاپ هاپ»\n"
+        "┃ ‎/income «درآمد» › وضعیت امروز\n"
+        "┃ ‎/salary «حقوق» › دریافت حقوق شغل\n"
+        "┃ ‎/jobs «مشاغل» › لیست شغل‌ها\n"
+        "┃ ‎/job «شغل» › وضعیت شغل فعلی\n"
+        "┃ ‎/choosejob «انتخاب شغل» <نام>\n"
+        "┃ ‎/quitjob «ترک شغل»\n"
+        "┃ ‎/joblevel «سطح شغل» یا «ارتقای شغل»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_missions": ("🎯 ماموریت", False,
         "┏━━━『 🎯 ماموریت 』━━━┓\n"
-        "┃ /missions «ماموریت» یا «ماموریت‌ها»\n"
+        "┃ ‎/missions «ماموریت» یا «ماموریت‌ها»\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_bank": ("🏦 بانک", False,
         "┏━━━『 🏦 بانک 』━━━┓\n"
-        "┃ /bank «بانک» یا «حساب»\n"
-        "┃ /deposit «سپرده» <مبلغ>\n"
-        "┃ /longdeposit «سپرده بلندمدت» <مبلغ> <روز>\n"
-        "┃ /withdraw «برداشت» <مبلغ>\n"
-        "┃ /longwithdraw «برداشت بلندمدت» <شناسه>\n"
-        "┃ /interest «سود»\n"
-        "┃ /bankupgrade «ارتقای بانک»\n"
+        "┃ ‎/bank «بانک» یا «حساب»\n"
+        "┃ ‎/deposit «سپرده» <مبلغ>\n"
+        "┃ ‎/longdeposit «سپرده بلندمدت» <مبلغ> <روز>\n"
+        "┃ ‎/withdraw «برداشت» <مبلغ>\n"
+        "┃ ‎/longwithdraw «برداشت بلندمدت» <شناسه>\n"
+        "┃ ‎/interest «سود»\n"
+        "┃ ‎/bankupgrade «ارتقای بانک»\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_market": ("📈 بازار و ترید", False,
         "┏━━━『 📈 بازار و ترید 』━━━┓\n"
-        "┃ /market «بازار» یا «ارز»\n"
-        "┃ /price «قیمت» <نماد>\n"
-        "┃ /buy «خرید» <نماد> <مبلغ>\n"
-        "┃ /sell «فروش» <نماد> <مقدار|all>\n"
-        "┃ /portfolio «سبد»\n"
-        "┃ /trade «ترید» <مبلغ>\n"
+        "┃ ‎/market «بازار» یا «ارز»\n"
+        "┃ ‎/price «قیمت» <نماد>\n"
+        "┃ ‎/buy «خرید» <نماد> <مبلغ>\n"
+        "┃ ‎/sell «فروش» <نماد> <مقدار|all>\n"
+        "┃ ‎/portfolio «سبد»\n"
+        "┃ ‎/trade «ترید» <مبلغ>\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_insurance": ("🛡️ بیمه", False,
         "┏━━━『 🛡️ بیمه 』━━━┓\n"
-        "┃ /insurance «بیمه» یا «وضعیت بیمه»\n"
-        "┃ /buyinsurance «خرید بیمه» <نام>\n"
-        "┃ /upgradeinsurance «ارتقای بیمه»\n"
+        "┃ ‎/insurance «بیمه» یا «وضعیت بیمه»\n"
+        "┃ ‎/buyinsurance «خرید بیمه» <نام>\n"
+        "┃ ‎/upgradeinsurance «ارتقای بیمه»\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_theft": ("🦹 دزدی و زندان", False,
         "┏━━━『 🦹 دزدی و زندان 』━━━┓\n"
-        "┃ /steal «دزدی» (ریپلای روی هدف)\n"
-        "┃ /wanted «تحت تعقیب»\n"
-        "┃ /jail «زندان»\n"
-        "┃ /escape «فرار»\n"
+        "┃ ‎/steal «دزدی» (ریپلای روی هدف)\n"
+        "┃ ‎/wanted «تحت تعقیب»\n"
+        "┃ ‎/jail «زندان»\n"
+        "┃ ‎/escape «فرار»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_city": ("🏙️ شهر", False,
         "┏━━━『 🏙️ شهر 』━━━┓\n"
-        "┃ /city «شهر»\n"
-        "┃ /foundcity «ساخت شهر»\n"
-        "┃ /upgradecity «ارتقای شهر»\n"
-        "┃ /build «ساختمان‌ها» [نام ساختمان]\n"
+        "┃ ‎/city «شهر»\n"
+        "┃ ‎/foundcity «ساخت شهر»\n"
+        "┃ ‎/upgradecity «ارتقای شهر»\n"
+        "┃ ‎/build «ساختمان‌ها» [نام ساختمان]\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_property": ("🏠 املاک", False,
         "┏━━━『 🏠 املاک 』━━━┓\n"
-        "┃ /property «املاک»\n"
-        "┃ /buyproperty «خرید ملک» <نوع>\n"
-        "┃ /sellproperty «فروش ملک» <شناسه>\n"
-        "┃ /myproperty «ملک من» [شناسه]\n"
+        "┃ ‎/property «املاک»\n"
+        "┃ ‎/buyproperty «خرید ملک» <نوع>\n"
+        "┃ ‎/sellproperty «فروش ملک» <شناسه>\n"
+        "┃ ‎/myproperty «ملک من» [شناسه]\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_marriage": ("💍 ازدواج", False,
         "┏━━━『 💍 ازدواج 』━━━┓\n"
-        "┃ /propose «درخواست ازدواج» (ریپلای)\n"
-        "┃ /marry «ازدواج» (ریپلای، برای قبول)\n"
-        "┃ /partner «همسر»\n"
-        "┃ /divorce «طلاق»\n"
-        "┃ /gift «هدیه» <مبلغ>\n"
+        "┃ ‎/propose «درخواست ازدواج» (ریپلای)\n"
+        "┃ ‎/marry «ازدواج» (ریپلای، برای قبول)\n"
+        "┃ ‎/partner «همسر»\n"
+        "┃ ‎/divorce «طلاق»\n"
+        "┃ ‎/gift «هدیه» <مبلغ>\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_pet": ("🐾 پت", False,
         "┏━━━『 🐾 پت 』━━━┓\n"
-        "┃ /pet «پت» • /pets «پت‌ها»\n"
-        "┃ /buypet «خرید پت» <نوع>\n"
-        "┃ /feedpet «غذا» • /trainpet «آموزش پت»\n"
-        "┃ /evolvepet «ارتقای پت»\n"
-        "┃ /petfight «فایت» [مبلغ] (ریپلای = PvP)\n"
+        "┃ ‎/pet «پت» • ‎/pets «پت‌ها»\n"
+        "┃ ‎/buypet «خرید پت» <نوع>\n"
+        "┃ ‎/feedpet «غذا» • ‎/trainpet «آموزش پت»\n"
+        "┃ ‎/evolvepet «ارتقای پت»\n"
+        "┃ ‎/petfight «فایت» [مبلغ] (ریپلای = PvP)\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_games": ("🎮 بازی‌ها", False,
         "┏━━━『 🎮 بازی‌ها 』━━━┓\n"
-        "┃ /dice «تاس» <مبلغ>\n"
-        "┃ /coinflip «شیر یا خط» <مبلغ> <شیر|خط>\n"
-        "┃ /guess «حدس» <عدد ۱-۱۰> <مبلغ>\n"
-        "┃ /xo «اکس او» <مبلغ> (ریپلای) یا <خونه‌ی ۱-۹>\n"
-        "┃ /game «بازی» › راهنما + آمار خودت\n"
+        "┃ ‎/dice «تاس» <مبلغ>\n"
+        "┃ ‎/coinflip «شیر یا خط» <مبلغ> <شیر|خط>\n"
+        "┃ ‎/guess «حدس» <عدد ۱-۱۰> <مبلغ>\n"
+        "┃ ‎/xo «اکس او» <مبلغ> (ریپلای) یا <خونه‌ی ۱-۹>\n"
+        "┃ ‎/game «بازی» › راهنما + آمار خودت\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_blackmarket": ("🖤 بازار سیاه", False,
         "┏━━━『 🖤 بازار سیاه 』━━━┓\n"
-        "┃ /blackmarket «بازار سیاه»\n"
-        "┃ /buyblack «خرید کالا» <کد>\n"
-        "┃ /sellblack «فروش کالا» <کد> [تعداد]\n"
-        "┃ /auction «حراجی» [مبلغ]\n"
+        "┃ ‎/blackmarket «بازار سیاه»\n"
+        "┃ ‎/buyblack «خرید کالا» <کد>\n"
+        "┃ ‎/sellblack «فروش کالا» <کد> [تعداد]\n"
+        "┃ ‎/auction «حراجی» [مبلغ]\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_underground": ("🌑 دنیای زیرزمینی", False,
         "┏━━━『 🌑 دنیای زیرزمینی 』━━━┓\n"
-        "┃ /darkweb «دارک وب» • /spy «جاسوس»\n"
-        "┃ /hacker «هکر»\n"
-        "┃ /undergroundmission «ماموریت زیرزمینی»\n"
-        "┃ /contract «قرارداد» › وضعیت خودت\n"
+        "┃ ‎/darkweb «دارک وب» • ‎/spy «جاسوس»\n"
+        "┃ ‎/hacker «هکر»\n"
+        "┃ ‎/undergroundmission «ماموریت زیرزمینی»\n"
+        "┃ ‎/contract «قرارداد» › وضعیت خودت\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_inventory": ("🎒 اینونتوری", False,
         "┏━━━『 🎒 اینونتوری 』━━━┓\n"
-        "┃ /myitems «کیف» یا «اینونتوری» یا «آیتم های من»\n"
-        "┃ /useitem «استفاده از» <کد آیتم>\n"
+        "┃ ‎/myitems «کیف» یا «اینونتوری» یا «آیتم های من»\n"
+        "┃ ‎/useitem «استفاده از» <کد آیتم>\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_leaderboard": ("🏆 دستاورد و رتبه", False,
         "┏━━━『 🏆 دستاورد و رتبه 』━━━┓\n"
-        "┃ /achievements «دستاوردها»\n"
-        "┃ /networth «ارزش خالص»\n"
-        "┃ /richest «ثروتمندان»\n"
-        "┃ /ecoleaderboard «برترین‌ها» [نوع]\n"
+        "┃ ‎/achievements «دستاوردها»\n"
+        "┃ ‎/networth «ارزش خالص»\n"
+        "┃ ‎/richest «ثروتمندان»\n"
+        "┃ ‎/ecoleaderboard «برترین‌ها» [نوع]\n"
         "┃ › نوع: ثروت،بانک،ترید،شغل،شهر،املاک،\n"
         "┃        پت،دزد،بازی،رپ،دستاورد\n"
-        "┃ /myrank «رتبه اقتصاد»\n"
+        "┃ ‎/myrank «رتبه اقتصاد»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_events": ("🎁 رویداد و فروشگاه ویژه", False,
         "┏━━━『 🎁 رویداد و فروشگاه ویژه 』━━━┓\n"
-        "┃ /event «رویداد» › رویداد فعال گروه\n"
-        "┃ /dailyshop «فروشگاه ویژه» › پیشنهاد امروز\n"
-        "┃ /buydailydeal «خرید ویژه»\n"
+        "┃ ‎/event «رویداد» › رویداد فعال گروه\n"
+        "┃ ‎/dailyshop «فروشگاه ویژه» › پیشنهاد امروز\n"
+        "┃ ‎/buydailydeal «خرید ویژه»\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_admin": ("⚙️ مدیریت اقتصاد", True,
         "┏━━━『 ⚙️ مدیریت اقتصاد (ادمین) 』━━━┓\n"
         "┃ «منوی اقتصاد» › نمای کلی درختی\n"
-        "┃ /economymodules «ماژول‌های اقتصاد» [نام] [روشن|خاموش]\n"
-        "┃ /inspecteconomy «بازرسی اقتصاد» (ریپلای)\n"
-        "┃ /reseteconomy «ریست اقتصاد کاربر» (ریپلای) تایید\n"
-        "┃ /economyhealth «سلامت اقتصاد»\n"
-        "┃ /forceevent «فورس رویداد» <نوع>\n"
+        "┃ ‎/economymodules «ماژول‌های اقتصاد» [نام] [روشن|خاموش]\n"
+        "┃ ‎/inspecteconomy «بازرسی اقتصاد» (ریپلای)\n"
+        "┃ ‎/reseteconomy «ریست اقتصاد کاربر» (ریپلای) تایید\n"
+        "┃ ‎/economyhealth «سلامت اقتصاد»\n"
+        "┃ ‎/forceevent «فورس رویداد» <نوع>\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
 }
 
@@ -5767,7 +5783,7 @@ def _build_category_markup(chat_id: int, cat_key: str, sub_key: str = None) -> I
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"⚠️ حد اخطار: {_warn_limit[chat_id]} — تغییر: /setwarnlimit عدد",
+                    f"⚠️ حد اخطار: {_warn_limit[chat_id]} — تغییر: ‎/setwarnlimit عدد",
                     callback_data="noop",
                 )
             ]
@@ -5775,7 +5791,7 @@ def _build_category_markup(chat_id: int, cat_key: str, sub_key: str = None) -> I
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🔇 مدت میوت پایه: {_mute_minutes[chat_id]} دقیقه — تغییر: /setmutetime دقیقه",
+                    f"🔇 مدت میوت پایه: {_mute_minutes[chat_id]} دقیقه — تغییر: ‎/setmutetime دقیقه",
                     callback_data="noop",
                 )
             ]
@@ -5863,7 +5879,7 @@ def _build_category_markup(chat_id: int, cat_key: str, sub_key: str = None) -> I
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"📖 دستور: /tag [متن] یا نوشتن «{config.TAG_ALL_TRIGGER_WORD}»",
+                    f"📖 دستور: ‎/tag [متن] یا نوشتن «{config.TAG_ALL_TRIGGER_WORD}»",
                     callback_data="noop",
                 )
             ]
@@ -6349,37 +6365,37 @@ ECON_ADMIN_HELP_TEXT = (
     "┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n"
 
     "┏━━━『 💰 سکه • یک نفر 』━━━┓\n"
-    "┃ ریپلای + /setcoins «تنظیم سکه» <مقدار>\n"
+    "┃ ریپلای + ‎/setcoins «تنظیم سکه» <مقدار>\n"
     "┃ › موجودی را دقیقاً روی عدد می‌گذارد\n"
-    "┃ ریپلای + /addcoins «اضافه سکه» <مقدار>\n"
+    "┃ ریپلای + ‎/addcoins «اضافه سکه» <مقدار>\n"
     "┃ › اضافه / کم می‌کند\n"
     "┃ › مقدار منفی هم قابل استفاده است\n"
     "┃ بدون ریپلای:\n"
-    "┃ /setcoins <آیدی عددی> <مقدار>\n"
+    "┃ ‎/setcoins <آیدی عددی> <مقدار>\n"
     "┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n"
 
     "┏━━━『 💰 سکه • همه اعضا 』━━━┓\n"
-    "┃ /setcoinsall «تنظیم سکه همه» <مقدار>\n"
-    "┃ /addcoinsall «اضافه سکه همه» <مقدار>\n"
+    "┃ ‎/setcoinsall «تنظیم سکه همه» <مقدار>\n"
+    "┃ ‎/addcoinsall «اضافه سکه همه» <مقدار>\n"
     "┃ › اعمال همزمان برای همه اعضا\n"
     "┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n"
 
     "┏━━━『 ✨ XP • لول • یک نفر 』━━━┓\n"
-    "┃ ریپلای + /setxp «تنظیم ایکسپی» <مقدار>\n"
-    "┃ ریپلای + /addxp «اضافه ایکسپی» <مقدار>\n"
-    "┃ ریپلای + /setlevel «تنظیم لول» <لول>\n"
+    "┃ ریپلای + ‎/setxp «تنظیم ایکسپی» <مقدار>\n"
+    "┃ ریپلای + ‎/addxp «اضافه ایکسپی» <مقدار>\n"
+    "┃ ریپلای + ‎/setlevel «تنظیم لول» <لول>\n"
     "┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n"
 
     "┏━━━『 ✨ XP • لول • همه اعضا 』━━━┓\n"
-    "┃ /setxpall «تنظیم ایکسپی همه» <مقدار>\n"
-    "┃ /addxpall «اضافه ایکسپی همه» <مقدار>\n"
-    "┃ /setlevelall «تنظیم لول همه» <لول>\n"
+    "┃ ‎/setxpall «تنظیم ایکسپی همه» <مقدار>\n"
+    "┃ ‎/addxpall «اضافه ایکسپی همه» <مقدار>\n"
+    "┃ ‎/setlevelall «تنظیم لول همه» <لول>\n"
     "┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n"
 
     "┏━━━『 ⚙️ اقتصاد خودکار گروه 』━━━┓\n"
-    "┃ /seteco «تنظیم اقتصاد»\n"
+    "┃ ‎/seteco «تنظیم اقتصاد»\n"
     "┃ › نمایش تنظیمات فعلی\n"
-    "┃ /seteco «تنظیم اقتصاد» <کلید> <عدد>\n"
+    "┃ ‎/seteco «تنظیم اقتصاد» <کلید> <عدد>\n"
     "┃ › تغییر مقدار (یا از دکمه های پنل)\n"
     "┃ کلیدها:\n"
     "┃ daily_min • daily_max\n"
@@ -6389,7 +6405,7 @@ ECON_ADMIN_HELP_TEXT = (
     "┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n"
 
     "┏━━━『 🛒 فروشگاه 』━━━┓\n"
-    "┃ /setshopprice «تنظیم قیمت فروشگاه» <کد> <قیمت>\n"
+    "┃ ‎/setshopprice «تنظیم قیمت فروشگاه» <کد> <قیمت>\n"
     "┃ › تغییر قیمت آیتم فروشگاه (یا از پنل → «مدیریت فروشگاه»)\n"
     "┃ › مخفی/نمایان کردن آیتم فقط از پنل ممکنه\n"
     "┃ › همه‌شون فقط برای همین گروه\n"
@@ -7237,7 +7253,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = " ".join(context.args) if context.args else None
     if not text:
         await update.effective_message.reply_text(
-            "استفاده: /notify متن پیام\nمثال: /notify فردا سرویس از ساعت ۱۰ صبح در دسترسه"
+            "استفاده: ‎/notify متن پیام\nمثال: ‎/notify فردا سرویس از ساعت ۱۰ صبح در دسترسه"
         )
         return
 
@@ -7454,12 +7470,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat and chat.type == "private" and not is_admin(update.effective_user.id):
         await update.effective_message.reply_text(
             "سلام! این ربات یه ربات مدیریت گروهه.\n"
-            "اگه توی یکی از گروه‌های ربات عضوی، از /panel برای پنل شخصیت (هوش مصنوعی/پروفایل) استفاده کن.\n"
+            "اگه توی یکی از گروه‌های ربات عضوی، از ‎/panel برای پنل شخصیت (هوش مصنوعی/پروفایل) استفاده کن.\n"
             f"برای ارتباط با مالک ربات: {config.OWNER_CONTACT}"
         )
         return
     await update.effective_message.reply_text(
-        "سلام! من فعالم 🤖\nبرای مشاهده‌ی دستورات از /help استفاده کن."
+        "سلام! من فعالم 🤖\nبرای مشاهده‌ی دستورات از ‎/help استفاده کن."
     )
 
 
@@ -7471,10 +7487,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # اگه فکر می‌کنی ادمینی ولی این پیام رو می‌بینی، یعنی آیدی عددی‌ت توی config.py
     # (لیست ADMIN_IDS) نیست - آیدی عددیت رو از @userinfobot بگیر و اونجا اضافه کن.
     if chat and chat.type == "private" and not is_admin(user_id):
-        logger.info(f"کاربر {user_id} (غیرادمین) توی پیوی /help زد.")
+        logger.info(f"کاربر {user_id} (غیرادمین) توی پیوی ‎/help زد.")
         await update.effective_message.reply_text(
             "سلام! این ربات یه ربات مدیریت گروهه.\n"
-            "اگه توی یکی از گروه‌های ربات عضوی، از /panel برای پنل شخصیت (هوش مصنوعی/پروفایل) استفاده کن.\n"
+            "اگه توی یکی از گروه‌های ربات عضوی، از ‎/panel برای پنل شخصیت (هوش مصنوعی/پروفایل) استفاده کن.\n"
             f"برای ارتباط با مالک ربات: {config.OWNER_CONTACT}"
         )
         return

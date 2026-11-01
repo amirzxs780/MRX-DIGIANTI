@@ -181,7 +181,7 @@ async def eco_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not _host().get_setting(chat.id, "economy_enabled"):
         await update.effective_message.reply_text(
-            "🔒 اقتصاد این گروه خاموشه. یه ادمین باید از /menu بخش «اقتصاد و نظرسنجی» روشنش کنه."
+            "🔒 اقتصاد این گروه خاموشه. یه ادمین باید از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کنه."
         )
         return
     await _render_hub(update, context, edit=False)

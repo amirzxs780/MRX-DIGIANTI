@@ -429,7 +429,7 @@ async def pollclose_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     poll_id = _resolve_poll_id(update, context)
     poll = host._polls.get(poll_id) if poll_id else None
     if not poll:
-        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس /pollclose (یا /pollclose <آیدی>)")
+        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس ‎/pollclose\nیا بدون ریپلای: ‎/pollclose <آیدی نظرسنجی>")
         return
     if not _can_manage(host, update, poll):
         await message.reply_text("فقط سازنده‌ی نظرسنجی یا ادمین می‌تونه ببنددش.")
@@ -452,7 +452,7 @@ async def polldelete_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     poll_id = _resolve_poll_id(update, context)
     poll = host._polls.get(poll_id) if poll_id else None
     if not poll:
-        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس /polldelete (یا /polldelete <آیدی>)")
+        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس ‎/polldelete\nیا بدون ریپلای: ‎/polldelete <آیدی نظرسنجی>")
         return
     if not _can_manage(host, update, poll):
         await message.reply_text("فقط سازنده‌ی نظرسنجی یا ادمین می‌تونه حذفش کنه.")
@@ -479,7 +479,7 @@ async def pollreopen_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await message.reply_text("این دستور فقط برای ادمین‌های مجازه.")
         return
     if not context.args:
-        await message.reply_text("استفاده: /pollreopen <آیدی نظرسنجی‌ای که توی /pollhistory دیدی>")
+        await message.reply_text("استفاده: ‎/pollreopen <آیدی نظرسنجی>\nآیدی رو با ‎/pollhistory پیدا کن.")
         return
     try:
         target_pid = int(context.args[0])
@@ -511,7 +511,7 @@ async def pollvoters_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     poll_id = _resolve_poll_id(update, context)
     poll = host._polls.get(poll_id) if poll_id else None
     if not poll:
-        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس /pollvoters")
+        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس ‎/pollvoters")
         return
     if not _can_manage(host, update, poll):
         await message.reply_text("فقط سازنده‌ی نظرسنجی یا ادمین می‌تونه رأی‌دهنده‌ها رو ببینه.")
@@ -538,7 +538,7 @@ async def pollhide_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     poll_id = _resolve_poll_id(update, context)
     poll = host._polls.get(poll_id) if poll_id else None
     if not poll:
-        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس /pollhide")
+        await message.reply_text("استفاده: روی پیام نظرسنجی ریپلای بزن و بنویس ‎/pollhide")
         return
     if not _can_manage(host, update, poll):
         await message.reply_text("فقط سازنده‌ی نظرسنجی یا ادمین می‌تونه این کارو بکنه.")

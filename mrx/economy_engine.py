@@ -311,7 +311,7 @@ def inventory_text(chat_id: int, uid: int) -> str:
     permanent = [k for k in owned if k in config.SHOP_ITEMS and "duration_hours" not in config.SHOP_ITEMS[k]]
 
     if not permanent and not timed:
-        return "هنوز هیچ آیتمی نخریدی. با /shop فروشگاه رو ببین."
+        return "هنوز هیچ آیتمی نخریدی. با ‎/shop فروشگاه رو ببین."
 
     lines = ["🎒 آیتم‌های تو:"]
     for key in permanent:
@@ -388,7 +388,7 @@ async def giveitem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     item_key = args[-1] if args else None
     if target_id is None or not item_key or item_key not in config.SHOP_ITEMS:
         await message.reply_text(
-            "استفاده: ریپلای روی پیام کسی + /giveitem <کد آیتم>  یا  /giveitem <آیدی> <کد آیتم>\n"
+            "استفاده (یکی از این دو روش):\n• روی پیام کاربر ریپلای بزن و بنویس ‎/giveitem <کد آیتم>\n• ‎/giveitem <آیدی> <کد آیتم>\n"
             "کدهای موجود: " + ", ".join(config.SHOP_ITEMS)
         )
         return
@@ -416,7 +416,7 @@ async def removeitem_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     args = context.args or []
     item_key = args[-1] if args else None
     if target_id is None or not item_key:
-        await message.reply_text("استفاده: ریپلای روی پیام کسی + /removeitem <کد آیتم>  یا  /removeitem <آیدی> <کد آیتم>")
+        await message.reply_text("استفاده (یکی از این دو روش):\n• روی پیام کاربر ریپلای بزن و بنویس ‎/removeitem <کد آیتم>\n• ‎/removeitem <آیدی> <کد آیتم>")
         return
     removed = False
     if item_key in host._owned_badges[chat.id].get(target_id, set()):

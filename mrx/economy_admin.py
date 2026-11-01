@@ -99,7 +99,7 @@ def module_off_message(chat_id: int, key: str) -> str:
     یه پیام یکسانِ گمراه‌کننده («اقتصاد گروه خاموشه») نشون می‌دادن."""
     host = _host()
     if not host.get_setting(chat_id, "economy_enabled"):
-        return "🔒 اقتصاد این گروه خاموشه. یه ادمین باید از /menu بخش «اقتصاد و نظرسنجی» روشنش کنه."
+        return "🔒 اقتصاد این گروه خاموشه. یه ادمین باید از ‎/menu بخش «اقتصاد و نظرسنجی» روشنش کنه."
     label = TOGGLES.get(key, key)
     return f"🔒 بخش «{label}» رو ادمین این گروه خاموش کرده (بقیه‌ی بخش‌های اقتصاد مشکلی ندارن)."
 

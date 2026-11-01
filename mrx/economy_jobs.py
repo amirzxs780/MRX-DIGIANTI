@@ -231,7 +231,7 @@ async def jobs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reason = eligibility_reason(chat.id, uid, key)
             lines.append(_job_line(key, job, reason is None, reason, key == current))
         lines.append("")
-    lines.append("با «انتخاب شغل [نام]» یا /choosejob <نام> یه شغل رو انتخاب کن.")
+    lines.append("با «انتخاب شغل [نام]» یا ‎/choosejob <نام> یه شغل رو انتخاب کن.")
     await message.reply_text("\n".join(lines).rstrip())
 
 
@@ -252,7 +252,7 @@ async def job_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = current_job_key(chat.id, uid)
     if not key:
         await message.reply_text(
-            "هنوز هیچ شغلی انتخاب نکردی. با «مشاغل» یا /jobs لیست رو ببین و با «انتخاب شغل [نام]» یکی رو بردار."
+            "هنوز هیچ شغلی انتخاب نکردی. با «مشاغل» یا ‎/jobs لیست رو ببین و با «انتخاب شغل [نام]» یکی رو بردار."
         )
         return
     job = JOBS[key]
@@ -295,7 +295,7 @@ async def choosejob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args or []
     if not args:
-        await message.reply_text("استفاده: «انتخاب شغل [نام شغل]» یا /choosejob <نام>\nبرای دیدن لیست: «مشاغل»")
+        await message.reply_text("استفاده: «انتخاب شغل [نام شغل]» یا ‎/choosejob <نام>\nبرای دیدن لیست: «مشاغل»")
         return
 
     uid = update.effective_user.id
@@ -313,7 +313,7 @@ async def choosejob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _progress_of(chat.id, uid, key)  # مطمئن شو رکورد Level/XP این شغل ساخته شده
     _current_job[chat.id][uid] = key
     job = JOBS[key]
-    await message.reply_text(f"✅ شغل جدیدت: {job['emoji']} {job['name']} شد. با «کار» یا /work شروع کن.")
+    await message.reply_text(f"✅ شغل جدیدت: {job['emoji']} {job['name']} شد. با «کار» یا ‎/work شروع کن.")
     try:
         completed = await economy_missions.record_progress(chat.id, uid, "choosejob", 1)
         for text in completed:

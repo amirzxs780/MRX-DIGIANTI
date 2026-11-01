@@ -298,11 +298,11 @@ async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args or []
     if len(args) < 2:
-        await message.reply_text("استفاده: «خرید [نماد] [مبلغ سکه]» یا /buy <نماد> <مبلغ>")
+        await message.reply_text("استفاده: «خرید [نماد] [مبلغ سکه]» یا ‎/buy <نماد> <مبلغ>")
         return
     symbol = args[0].upper()
     if symbol not in ASSETS:
-        await message.reply_text("همچین آیتم/نمادی پیدا نشد. برای فروشگاه: /shop — برای بازار: «بازار»")
+        await message.reply_text("همچین آیتم/نمادی پیدا نشد. برای فروشگاه: ‎/shop — برای بازار: «بازار»")
         return
     try:
         amount = int(args[1].replace(",", ""))
@@ -355,7 +355,7 @@ async def sell_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args or []
     if len(args) < 2:
-        await message.reply_text("استفاده: «فروش [نماد] [مقدار|all]» یا /sell <نماد> <مقدار|all>")
+        await message.reply_text("استفاده: «فروش [نماد] [مقدار|all]» یا ‎/sell <نماد> <مقدار|all>")
         return
     symbol = args[0].upper()
     if symbol not in ASSETS:
@@ -456,7 +456,7 @@ async def trade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = -1
     min_a, max_a = getattr(config, "TRADE_MIN_AMOUNT", 50), getattr(config, "TRADE_MAX_AMOUNT", 5000)
     if amount <= 0:
-        await message.reply_text(f"استفاده: «ترید [مبلغ]» یا /trade <مبلغ> (بین {min_a} و {max_a})")
+        await message.reply_text(f"استفاده: «ترید [مبلغ]» یا ‎/trade <مبلغ> (بین {min_a} و {max_a})")
         return
     if not (min_a <= amount <= max_a):
         await message.reply_text(f"مبلغ باید بین {min_a} و {max_a} {config.CURRENCY_NAME} باشه.")

@@ -299,8 +299,8 @@ async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount = _parse_amount(context.args)
     if amount is None:
         await message.reply_text(
-            "استفاده: «سپرده [مبلغ]» یا /deposit <مبلغ>\n"
-            "برای سپرده‌ی بلندمدت: «سپرده بلندمدت [مبلغ] [روز]» یا /longdeposit <مبلغ> <روز>"
+            "استفاده: «سپرده [مبلغ]» یا ‎/deposit <مبلغ>\n"
+            "برای سپرده‌ی بلندمدت: «سپرده بلندمدت [مبلغ] [روز]» یا ‎/longdeposit <مبلغ> <روز>"
         )
         return
 
@@ -341,7 +341,7 @@ async def long_deposit_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if len(args) < 2:
         options = "، ".join(f"{d} روز ({r*100:.0f}٪)" for d, r in sorted(durations.items()))
         await message.reply_text(
-            f"استفاده: «سپرده بلندمدت [مبلغ] [روز]» یا /longdeposit <مبلغ> <روز>\nمدت‌های مجاز: {options}"
+            f"استفاده: «سپرده بلندمدت [مبلغ] [روز]» یا ‎/longdeposit <مبلغ> <روز>\nمدت‌های مجاز: {options}"
         )
         return
 
@@ -463,7 +463,7 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     amount = _parse_amount(context.args)
     if amount is None:
-        await message.reply_text("استفاده: «برداشت [مبلغ]» یا /withdraw <مبلغ>")
+        await message.reply_text("استفاده: «برداشت [مبلغ]» یا ‎/withdraw <مبلغ>")
         return
 
     fee_pct = getattr(config, "WITHDRAWAL_FEE_PERCENT", 0.02)

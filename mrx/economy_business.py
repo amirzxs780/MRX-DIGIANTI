@@ -253,7 +253,7 @@ async def business_types_command(update: Update, context: ContextTypes.DEFAULT_T
         price = current_price(chat.id, uid, key)
         lines.append(
             f"{info['name']} — قیمت: {price:,} {config.CURRENCY_NAME} — درآمد پایه: "
-            f"{info['base_revenue_per_hour']}/h — ظرفیت کارمند: {info['max_employees']}"
+            f"{info['base_revenue_per_hour']}‎/h — ظرفیت کارمند: {info['max_employees']}"
         )
     lines.append("")
     lines.append("خرید: «خرید کسب‌وکار [نوع]» — کسب‌وکارهای خودت: «کسب‌وکار من»")
@@ -379,7 +379,7 @@ async def hire_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_history(target, "BUSINESS", f"استخدام کارمند #{target['employees']} به هزینه‌ی {cost:,}")
     await message.reply_text(
         f"✅ یه کارمند جدید استخدام شد ({target['employees']}/{info['max_employees']}). "
-        f"حقوق ساعتی الان: {round(hourly_expense(target))} {config.CURRENCY_NAME}/h"
+        f"حقوق ساعتی الان: {round(hourly_expense(target))} {config.CURRENCY_NAME}‎/h"
     )
     await host.save_state()
 
@@ -479,7 +479,7 @@ async def set_price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _collect_one(chat.id, uid, target)  # قبل از تغییر قیمت، حساب قبلی با قیمت قبلی تسویه بشه
     target["price_mult"] = mult
     _log_history(target, "BUSINESS", f"تغییر ضریب قیمت به {mult}")
-    await message.reply_text(f"✅ ضریب قیمت روی {mult} تنظیم شد. (درآمد تخمینی: {round(hourly_revenue(chat.id, target))} {config.CURRENCY_NAME}/h)")
+    await message.reply_text(f"✅ ضریب قیمت روی {mult} تنظیم شد. (درآمد تخمینی: {round(hourly_revenue(chat.id, target))} {config.CURRENCY_NAME}‎/h)")
     await host.save_state()
 
 
@@ -611,7 +611,7 @@ async def my_business_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         lines.append(
             f"#{b['id']} {info['name']} Lv{b['level']} {ad_badge} — کارمند: {b['employees']}/{info['max_employees']} — "
             f"موجودی: {b['inventory']}/{info['inventory_capacity']} — قیمت: ×{b['price_mult']} — "
-            f"درآمد: {round(hourly_revenue(chat.id, b))}/h — هزینه: {round(hourly_expense(b))}/h{tax_note}"
+            f"درآمد: {round(hourly_revenue(chat.id, b))}‎/h — هزینه: {round(hourly_expense(b))}‎/h{tax_note}"
         )
     lines.append("")
     if total_net > 0:
@@ -640,9 +640,9 @@ async def business_profit_command(update: Update, context: ContextTypes.DEFAULT_
     lines = [
         f"📊 داشبورد سود/زیان — {info['name']} #{target['id']}",
         "",
-        f"درآمد ساعتی: {round(rev_h):,} {config.CURRENCY_NAME}/h",
-        f"هزینه ساعتی: {round(exp_h):,} {config.CURRENCY_NAME}/h (اجاره + حقوق {target['employees']} کارمند)",
-        f"سود خالص ساعتی: {round(rev_h - exp_h):,} {config.CURRENCY_NAME}/h",
+        f"درآمد ساعتی: {round(rev_h):,} {config.CURRENCY_NAME}‎/h",
+        f"هزینه ساعتی: {round(exp_h):,} {config.CURRENCY_NAME}‎/h (اجاره + حقوق {target['employees']} کارمند)",
+        f"سود خالص ساعتی: {round(rev_h - exp_h):,} {config.CURRENCY_NAME}‎/h",
         "",
         f"جمع درآمد از خرید تا الان: {round(target.get('lifetime_revenue', 0)):,}",
         f"جمع هزینه از خرید تا الان: {round(target.get('lifetime_expense', 0)):,}",

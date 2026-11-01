@@ -1404,32 +1404,32 @@ async def panel_callback_handler(update, context: ContextTypes.DEFAULT_TYPE):
                         "antispam_mentions", "antispam_hashtags", "antispam_emoji", "antispam_ads",
                         "antispam_forward_flood", "antispam_photo_flood", "antispam_video_flood"]:
                 lines.append(f"{'🟢' if settings.get(key, False) else '🔴'} {key}")
-            lines.append("\nتغییر: /antispam <نوع> on|off")
+            lines.append("\nتغییر: ‎/antispam <نوع> on|off")
             await query.message.reply_text("\n".join(lines))
         elif sub == "antibot":
             await query.message.reply_text(
                 f"🤖 ضد بات: {'🟢 روشن' if settings.get('lock_bots', False) else '🔴 خاموش'}\n"
-                "این بخش با موتور قفل ۲.۰ (/lock bot) هماهنگه.\nفعال‌سازی: /antibot on"
+                "این بخش با موتور قفل ۲.۰ (‎/lock bot) هماهنگه.\nفعال‌سازی: ‎/antibot on"
             )
         elif sub == "captcha":
             await query.message.reply_text(
                 f"🔐 کپچا: {'🟢 روشن' if settings.get('captcha_enabled', False) else '🔴 خاموش'}\n"
                 f"اکشن شکست: {get_threshold(chat_id, 'captcha_action')}\n"
                 f"حداکثر تلاش: {get_threshold(chat_id, 'captcha_max_attempts')}\n\n"
-                "دستورات: /captcha on|off | /captcha action mute|kick|ban | /captcha attempts <عدد>"
+                "دستورات: ‎/captcha on|off | ‎/captcha action mute|kick|ban | ‎/captcha attempts <عدد>"
             )
         elif sub == "raid":
             risk, label = compute_raid_risk(chat_id)
             active = _raid_state[chat_id]["until"] > time.time()
             await query.message.reply_text(
                 f"🚨 وضعیت رید: {'فعال' if active else 'غیرفعال'}\nریسک فعلی: {label} ({risk}/100)\n\n"
-                "دستورات: /raid status | /raid off"
+                "دستورات: ‎/raid status | ‎/raid off"
             )
         elif sub == "link":
             await query.message.reply_text(
                 "🔗 محافظت لینک از همون سیستم موتور قفل ۲.۰ استفاده می‌کنه.\n"
                 "وایت‌لیست/بلک‌لیست دامنه (مشترک بین دو موتور):\n"
-                "/whitelist add|remove <دامنه>\n/spamblacklist add|remove <دامنه>"
+                "‎/whitelist add|remove <دامنه>\n/spamblacklist add|remove <دامنه>"
             )
         elif sub == "thresholds":
             await query.message.reply_text(
@@ -1521,7 +1521,7 @@ async def antispam_command(update, context: ContextTypes.DEFAULT_TYPE):
         await host.save_state()
         return
 
-    await update.effective_message.reply_text("استفاده: /antispam <نوع> on|off  یا  /antispam mode <NORMAL|STRICT|HIGH_SECURITY|...>")
+    await update.effective_message.reply_text("استفاده: ‎/antispam <نوع> on|off  یا  ‎/antispam mode <NORMAL|STRICT|HIGH_SECURITY|...>\nمثال: ‎/antispam link off  یا  ‎/antispam mode STRICT")
 
 
 async def antibot_command(update, context: ContextTypes.DEFAULT_TYPE):
@@ -1533,8 +1533,8 @@ async def antibot_command(update, context: ContextTypes.DEFAULT_TYPE):
     if not args:
         await update.effective_message.reply_text(
             f"🤖 ضد بات: {'🟢 روشن' if host._chat_settings[chat_id].get('lock_bots', False) else '🔴 خاموش'}\n"
-            "فعال/غیرفعال: /antibot on یا /antibot off\n"
-            "مدیریت لیست مجاز: /lock bot allow|disallow <آیدی>"
+            "فعال/غیرفعال: ‎/antibot on یا ‎/antibot off\n"
+            "مدیریت لیست مجاز: ‎/lock bot allow|disallow <آیدی>"
         )
         return
     if not _require_admin(update):
@@ -1555,7 +1555,7 @@ async def captcha_command(update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(
             f"🔐 کپچا: {'🟢 روشن' if host._chat_settings[chat_id].get('captcha_enabled', False) else '🔴 خاموش'}\n"
             f"اکشن شکست: {get_threshold(chat_id, 'captcha_action')} | حداکثر تلاش: {get_threshold(chat_id, 'captcha_max_attempts')}\n\n"
-            "دستورات: /captcha on|off | /captcha action mute|kick|ban | /captcha attempts <عدد>"
+            "دستورات: ‎/captcha on|off | ‎/captcha action mute|kick|ban | ‎/captcha attempts <عدد>"
         )
         return
     if not _require_admin(update):
@@ -1657,7 +1657,7 @@ async def security_user_command(update, context: ContextTypes.DEFAULT_TYPE):
         return
     target_id, name, _r = host._parse_target_and_reason(update)
     if target_id is None:
-        await update.effective_message.reply_text("ریپلای بزن یا: /security_user <آیدی>")
+        await update.effective_message.reply_text("ریپلای بزن یا: ‎/security_user <آیدی>")
         return
     await update.effective_message.reply_text(user_security_profile_text(chat_id, target_id, name))
 
@@ -1674,7 +1674,7 @@ async def spamconfig_command(update, context: ContextTypes.DEFAULT_TYPE):
         lines = ["⚙️ آستانه‌های فعلی:"]
         for k in DEFAULT_THRESHOLDS:
             lines.append(f"{k}: {get_threshold(chat_id, k)}")
-        lines.append("\nتغییر: /spamconfig <کلید> <مقدار>")
+        lines.append("\nتغییر: ‎/spamconfig <کلید> <مقدار>")
         await update.effective_message.reply_text("\n".join(lines))
         return
     key, raw_value = args[0], args[1]
@@ -1700,7 +1700,7 @@ async def whitelist_command(update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args or []
     if len(args) < 2 or args[0].lower() not in ("add", "remove"):
-        await update.effective_message.reply_text("استفاده: /whitelist add|remove <دامنه>")
+        await update.effective_message.reply_text("استفاده: ‎/whitelist add|remove <دامنه>\nمثال: ‎/whitelist add example.com")
         return
     domain = args[1].lower().strip()
     if args[0].lower() == "add":
@@ -1722,7 +1722,7 @@ async def spamblacklist_command(update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args or []
     if len(args) < 2 or args[0].lower() not in ("add", "remove"):
-        await update.effective_message.reply_text("استفاده: /spamblacklist add|remove <دامنه>")
+        await update.effective_message.reply_text("استفاده: ‎/spamblacklist add|remove <دامنه>\nمثال: ‎/spamblacklist add spam-site.com")
         return
     domain = args[1].lower().strip()
     if args[0].lower() == "add":
