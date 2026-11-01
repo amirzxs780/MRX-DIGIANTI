@@ -613,7 +613,9 @@ def _purge_help_text() -> str:
         "• preview/پیش‌نمایش › قبل از حذف نشون می‌ده\n"
         "• silent/بی‌صدا › بدون گزارش توی چت\n\n"
         "کاربر خاص:\n"
-        "• /purgeuser (ریپلای) [تعداد|بازه‌زمانی]\n\n"
+        "• /purgeuser (ریپلای) [تعداد|بازه‌زمانی]\n"
+        "• /purgeuser <آیدی عددی> [تعداد|بازه‌زمانی]\n"
+        "• /purgeuser @username [تعداد|بازه‌زمانی]\n\n"
         "آمار:\n"
         "• /purgestats\n\n"
         "همه‌ی دستورهای بالا معادل فارسی «پاکسازی ...» و «پاکسازی کاربر ...» "
@@ -884,9 +886,75 @@ async def purge_command(update, context) -> None:
     await _dispatch_purge(update, context, chat.id, ids, entries, spec, None)
 
 
+_PURGEUSER_USAGE = (
+    "استفاده (هر کدوم از این سه راه):\n"
+    "• ریپلای روی پیام کاربر + /purgeuser [تعداد|بازه‌زمانی]\n"
+    "• /purgeuser <آیدی عددی> [تعداد|بازه‌زمانی]\n"
+    "• /purgeuser @username [تعداد|بازه‌زمانی]\n"
+    "مثال: /purgeuser 100  یا  /purgeuser @ali_123 24h  یا  /purgeuser 123456789 7d"
+)
+
+
+@dataclass
+class _ResolvedTarget:
+    user_id: int | None = None
+    name: str | None = None
+    remaining_args: list = field(default_factory=list)
+    error: str | None = None
+
+
+def _resolve_purgeuser_target(message, args: list[str], host) -> _ResolvedTarget:
+    """هدفِ «پاکسازی کاربر» رو از سه راه تشخیص می‌ده: ریپلای، آیدی عددی، یا @username
+    (با استفاده از دیکشنریِ شناخته‌شده‌ی bot.py - همون چیزی که warn/mute/ban هم ازش
+    استفاده می‌کنن). به‌جای یه پیام خطای یکسان برای همه‌ی حالت‌ها، دلیل دقیقِ هر
+    شکستِ تشخیص رو برمی‌گردونه تا کاربر بدونه دقیقاً چی رو باید درست کنه."""
+    reply = message.reply_to_message
+    if reply is not None:
+        if reply.from_user is not None:
+            u = reply.from_user
+            return _ResolvedTarget(
+                user_id=u.id,
+                name=u.first_name or u.username or str(u.id),
+                remaining_args=args,
+            )
+        # ریپلای شده ولی from_user نداره: معمولاً یعنی پیام رو یه ادمین ناشناس
+        # (Hide My Name) یا یه کانال لینک‌شده فرستاده - تلگرام فرستنده‌ی واقعی رو
+        # به ربات نمی‌ده، پس باید با آیدی/یوزرنیم هدف رو مشخص کرد.
+        return _ResolvedTarget(error=(
+            "⚠️ فرستنده‌ی این پیام قابل‌شناسایی نیست (احتمالاً پیام رو یه ادمین ناشناس "
+            "یا یه کانال فرستاده). به‌جای ریپلای، از آیدی عددی یا @username استفاده کن.\n\n"
+            + _PURGEUSER_USAGE
+        ))
+
+    if not args:
+        return _ResolvedTarget(error=_PURGEUSER_USAGE)
+
+    token = _clean_token(args[0])
+    rest = args[1:]
+
+    if token.isdigit():
+        target_id = int(token)
+        name = host._user_display_names.get(target_id, token)
+        return _ResolvedTarget(user_id=target_id, name=name, remaining_args=rest)
+
+    if token.startswith("@") and len(token) > 1:
+        uname = token[1:].lower()
+        target_id = host._username_to_id.get(uname)
+        if target_id is None:
+            return _ResolvedTarget(error=(
+                f"⚠️ یوزرنیم «{token}» هنوز توی حافظه‌ی ربات ثبت نشده (ربات فقط کسایی رو "
+                "می‌شناسه که حداقل یه پیام توی گروه فرستاده باشن). به‌جاش ریپلای بزن یا "
+                "آیدی عددی کاربر رو بده.\n\n" + _PURGEUSER_USAGE
+            ))
+        name = host._user_display_names.get(target_id, token)
+        return _ResolvedTarget(user_id=target_id, name=name, remaining_args=rest)
+
+    return _ResolvedTarget(error=_PURGEUSER_USAGE)
+
+
 async def purgeuser_command(update, context) -> None:
-    """/purgeuser و «پاکسازی کاربر» - ریپلای روی پیام یه کاربر، پیام‌های همون
-    کاربر رو (توی محدوده‌ی مشخص‌شده، از کش) پاک می‌کنه."""
+    """/purgeuser و «پاکسازی کاربر» - هدف با ریپلای، آیدی عددی یا @username مشخص
+    می‌شه؛ پیام‌های همون کاربر رو (توی محدوده‌ی مشخص‌شده، از کش) پاک می‌کنه."""
     import bot as host
 
     message = update.effective_message
@@ -903,34 +971,28 @@ async def purgeuser_command(update, context) -> None:
         await message.reply_text("⛔ شما اجازه استفاده از سیستم پاکسازی را ندارید.")
         return
 
-    target = None
-    if message.reply_to_message and message.reply_to_message.from_user:
-        target = message.reply_to_message.from_user
-    if target is None:
-        await message.reply_text(
-            "استفاده: روی پیام کاربر ریپلای بزن و بنویس /purgeuser [تعداد|بازه‌زمانی]\n"
-            "مثال: /purgeuser 100  یا  /purgeuser 24h"
-        )
+    target = _resolve_purgeuser_target(message, list(context.args or []), host)
+    if target.error:
+        await message.reply_text(target.error)
         return
 
-    args = list(context.args or [])
-    spec, errors = parse_purge_args(args)
+    spec, errors = parse_purge_args(target.remaining_args)
     if errors:
         await message.reply_text("⚠️ ورودی نامعتبر:\n" + "\n".join(errors))
         return
 
     spec.clamp_count(int(getattr(config, "PURGE_MAX_MESSAGES", 1000)))
 
-    entries = _gather_candidates(chat.id, spec, scope_user_id=target.id)
+    entries = _gather_candidates(chat.id, spec, scope_user_id=target.user_id)
     ids = [e["id"] for e in entries]
     if not ids:
         await message.reply_text(
-            "📭 پیام قابل‌حذفی از این کاربر (توی تاریخچه‌ی ذخیره‌شده‌ی ربات) پیدا نشد."
+            f"📭 پیام قابل‌حذفی از «{target.name}» توی تاریخچه‌ی ذخیره‌شده‌ی ربات پیدا نشد.\n"
+            "⚠️ این موتور فقط پیام‌هایی رو می‌بینه که بعد از آخرین بالا اومدن ربات ارسال شدن."
         )
         return
 
-    target_name = target.first_name or target.username or str(target.id)
-    await _dispatch_purge(update, context, chat.id, ids, entries, spec, note=f"👤 هدف: {target_name}")
+    await _dispatch_purge(update, context, chat.id, ids, entries, spec, note=f"👤 هدف: {target.name}")
 
 
 async def purgestats_command(update, context) -> None:
