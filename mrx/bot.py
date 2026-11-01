@@ -8183,10 +8183,11 @@ def main():
     #   pnd:cancel    -> دکمه‌ی «لغو» روی ورودی‌های معلق پنل
     #   menu_version  -> دکمه‌ی «🏷 نسخه» توی منوی اصلی
     #   ver:          -> دکمه‌های داخل پنل نسخه (تغییر نسخه، ارسال مجدد، لاگ، changelog، حذف و ...)
+    #   grp:          -> پنل شخصی پیوی: خروج ربات از یه گروه (grp:leaveask:/grp:leave:/grp:cancel)
     app.add_handler(
         CallbackQueryHandler(
             menu_callback_handler,
-            pattern="^(toggle:|menu_close|menu_back|menu_help|menu_status|menu_version|cycle:|panel:|sub:|ask:|xp:|econ:top|term:stats|pnd:cancel|show_relations|noop|adm:pick:|econ_help|econv:|econset:|econshop:|econreset:|econquick:|act:|help_top|help_eco|help_sec:|help_ecosec:|ver:)",
+            pattern="^(toggle:|menu_close|menu_back|menu_help|menu_status|menu_version|cycle:|panel:|sub:|ask:|xp:|econ:top|term:stats|pnd:cancel|show_relations|noop|adm:pick:|econ_help|econv:|econset:|econshop:|econreset:|econquick:|act:|help_top|help_eco|help_sec:|help_ecosec:|ver:|grp:)",
         )
     )
     app.add_handler(CallbackQueryHandler(dm_panel_callback_handler, pattern="^dm:"))
