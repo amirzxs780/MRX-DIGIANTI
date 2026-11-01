@@ -2446,6 +2446,7 @@ _username_to_id = {}
 # آخرین باری که پاکسازی دوره‌ای Activity History اجرا شد (throttle - هر ۶ ساعت یه‌بار، نه هر ۳۰ ثانیه)
 _last_retention_cleanup = 0
 _last_moderation_decay = 0
+_last_known_chats_cleanup = 0  # آخرین باری که _known_chats خودکار با تلگرام وریفای شد
 
 
 def _activity_today_str() -> str:
@@ -6535,16 +6536,20 @@ def _group_picker_text() -> str:
     )
 
 
-async def _get_verified_known_chats(context: ContextTypes.DEFAULT_TYPE) -> list[int]:
+async def _get_verified_known_chats(bot) -> list[int]:
     """🐛 «لیست قدیمی‌ها» (رفع‌شده - پاک‌سازی عطف‌به‌ماسبق): فیکس هندلر my_chat_member
     فقط جلوی قدیمی‌شدنِ لیست رو از این به بعد می‌گیره؛ گروه‌هایی که از قبلِ این فیکس
-    به همون روش (اخراج دستی توسط یه ادمین دیگه) از _known_chats پاک نشده بودن، همچنان
-    اونجا می‌موندن. برای همین هر بار که پنل گروه‌ها باز می‌شه، واقعاً از تلگرام می‌پرسیم
-    ربات هنوز توی اون گروه عضوه یا نه، و هر گروه مُرده‌ای رو همینجا هم قطعی حذف می‌کنیم."""
+    به همون روش (اخراج دستی توسط یه ادمین دیگه، یا حذف کامل خودِ گروه - که تلگرام همیشه
+    my_chat_member براش نمی‌فرسته) از _known_chats پاک نشده بودن، همچنان اونجا می‌موندن.
+    برای همین زنده نگه‌داشتنِ این شمارش فقط به یه هندلر رویداد بسته نیست: این تابع واقعاً
+    از تلگرام می‌پرسه ربات هنوز توی هر گروه عضوه یا نه، و هر گروه مُرده‌ای رو قطعی حذف
+    می‌کنه. هم هر بار پنل گروه‌ها/نسخه باز می‌شه صدا زده می‌شه، هم خودکار و دوره‌ای توسط
+    _periodic_save_loop - یعنی حتی بدون باز کردن هیچ پنلی هم به‌مرور خودش تازه می‌مونه.
+    bot: یه شیء Bot (یا context.bot یا همون _bot_instance سراسری) - نه خودِ context."""
     verified, dead = [], []
     for chat_id in sorted(_known_chats):
         try:
-            member = await context.bot.get_chat_member(chat_id, context.bot.id)
+            member = await bot.get_chat_member(chat_id, bot.id)
             if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
                 dead.append(chat_id)
             else:
@@ -6597,7 +6602,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     chat = update.effective_chat
     if chat.type == "private":
-        groups = await _get_verified_known_chats(context)
+        groups = await _get_verified_known_chats(context.bot)
         if not groups:
             await update.effective_message.reply_text(
                 "هنوز هیچ گروهی شناخته نشده. اول ربات رو به یه گروه اضافه و ادمینش کن."
@@ -6704,7 +6709,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
         if grp_action == "cancel":
             await query.answer()
-            groups = await _get_verified_known_chats(context)
+            groups = await _get_verified_known_chats(context.bot)
             await query.edit_message_text(
                 _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
             )
@@ -6728,7 +6733,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 await context.bot.leave_chat(grp_chat_id)
             except Exception as e:
                 logger.warning(f"خروج از گروه {grp_chat_id} ناموفق بود: {e}")
-                groups = await _get_verified_known_chats(context)
+                groups = await _get_verified_known_chats(context.bot)
                 await query.edit_message_text(
                     f"❌ خروج از «{grp_title}» ناموفق بود (شاید ربات از قبل اونجا نبوده).",
                     reply_markup=_group_picker_markup(groups, context.bot.username),
@@ -6739,7 +6744,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             if _admin_selected_chat.get(user.id) == grp_chat_id:
                 _admin_selected_chat.pop(user.id, None)
             await save_state()
-            groups = await _get_verified_known_chats(context)
+            groups = await _get_verified_known_chats(context.bot)
             header = f"✅ ربات از «{grp_title}» خارج شد.\n\n" + _group_picker_text()
             if groups:
                 await query.edit_message_text(header, reply_markup=_group_picker_markup(groups, context.bot.username))
@@ -6754,7 +6759,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if is_private:
         chat_id = _admin_selected_chat.get(user.id)
         if chat_id is None:
-            groups = await _get_verified_known_chats(context)
+            groups = await _get_verified_known_chats(context.bot)
             await query.answer()
             if not groups:
                 await query.edit_message_text("هنوز هیچ گروهی شناخته نشده.")
@@ -6789,7 +6794,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if query.data == "menu_back":
         await query.answer()
         if is_private:
-            groups = await _get_verified_known_chats(context)
+            groups = await _get_verified_known_chats(context.bot)
             await query.edit_message_text(
                 _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
             )
@@ -6809,7 +6814,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     if query.data == "menu_version":
         await query.answer()
-        await query.edit_message_text(_version_panel_text(), reply_markup=_version_panel_markup())
+        await query.edit_message_text(await _version_panel_text(context.bot), reply_markup=_version_panel_markup())
         return
 
     if query.data == "ver:toggle_auto":
@@ -6818,7 +6823,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             return
         _version_state["auto_announce"] = not _version_state["auto_announce"]
         await query.answer()
-        await query.edit_message_text(_version_panel_text(), reply_markup=_version_panel_markup())
+        await query.edit_message_text(await _version_panel_text(context.bot), reply_markup=_version_panel_markup())
         await save_state()
         return
 
@@ -6828,7 +6833,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             return
         _version_state["pin_announcement"] = not _version_state["pin_announcement"]
         await query.answer()
-        await query.edit_message_text(_version_panel_text(), reply_markup=_version_panel_markup())
+        await query.edit_message_text(await _version_panel_text(context.bot), reply_markup=_version_panel_markup())
         await save_state()
         return
 
@@ -6837,8 +6842,11 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await query.answer("این بخش فقط برای ادمین‌های مجاز به «manage_version»ست.", show_alert=True)
             return
         await query.answer()
+        # 🐛 قبلاً اینجا هم مستقیم از len(_known_chats) خام خونده می‌شد؛ حالا قبل از
+        # نمایش تعداد، لیست واقعاً وریفای می‌شه تا «به N گروه فرستاده بشه؟» همیشه دقیق باشه.
+        verified_count = len(await _get_verified_known_chats(context.bot))
         await query.edit_message_text(
-            f"📢 اطلاعیه‌ی نسخه‌ی {_effective_version()} دوباره به {len(_known_chats)} گروه فرستاده بشه؟",
+            f"📢 اطلاعیه‌ی نسخه‌ی {_effective_version()} دوباره به {verified_count} گروه فرستاده بشه؟",
             reply_markup=_version_resend_confirm_markup(),
         )
         return
@@ -6856,7 +6864,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await save_state()
         await query.edit_message_text(
             f"✅ اطلاعیه‌ی نسخه‌ی {current} به {sent} چت ارسال شد. ({failed} مورد ناموفق)\n\n"
-            + _version_panel_text(),
+            + await _version_panel_text(context.bot),
             reply_markup=_version_panel_markup(),
         )
         return
@@ -7350,7 +7358,12 @@ async def _announce_version_update_if_needed(bot):
 
 # ---------- پنل مدیریت نسخه (دکمه‌ی 🏷 نسخه توی /menu) ----------
 
-def _version_panel_text() -> str:
+async def _version_panel_text(bot) -> str:
+    """🐛 تا قبل از این، شمارش «گروه‌های شناخته‌شده» مستقیم از روی _known_chats خام
+    خونده می‌شد - یعنی اگه گروهی حذف می‌شد و رویداد my_chat_member براش نمی‌رسید
+    (مثلاً حذف کامل خودِ گروه)، این عدد برای همیشه بالاتر از واقعیت می‌موند. حالا هر
+    بار این پنل باز می‌شه، لیست واقعاً از تلگرام وریفای و گروه‌های مُرده حذف می‌شن."""
+    verified = await _get_verified_known_chats(bot)
     current = _effective_version()
     note = _version_changelog_line(current)
     auto_on = _version_state["auto_announce"]
@@ -7362,7 +7375,7 @@ def _version_panel_text() -> str:
         f"┃ آخرین نسخه‌ی اطلاع‌رسانی‌شده: {last or '—'}",
         f"┃ اطلاع‌رسانی خودکار: {'🟢 روشن' if auto_on else '🔴 خاموش'}",
         f"┃ پین کردن اطلاعیه: {'🟢 روشن' if pin_on else '🔴 خاموش'}",
-        f"┃ گروه‌های شناخته‌شده: {len(_known_chats)}",
+        f"┃ گروه‌های شناخته‌شده: {len(verified)}",
         "╰━━━━━━━━━━━━━━━━━━━━━━╯",
     ]
     if note:
@@ -7504,7 +7517,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def _periodic_save_loop():
-    global _last_retention_cleanup, _last_moderation_decay
+    """🐛 شمارش «گروه‌های شناخته‌شده» زنده نگه‌داشته می‌شه: علاوه بر پنل‌هایی که با باز
+    شدنشون _known_chats رو وریفای می‌کنن (منوی اصلی، پنل نسخه)، این حلقه هر ۶ ساعت یه
+    بار خودش - بدون نیاز به باز شدن هیچ پنلی توسط هیچ ادمینی - با تلگرام چک می‌کنه کدوم
+    گروه‌ها دیگه زنده نیستن (حذف شده‌ن یا ربات ازشون اخراج شده) و خودکار از لیست پاکشون
+    می‌کنه؛ یعنی اگه چند روز هم کسی به پنل سر نزنه، باز عدد نمایش‌داده‌شده واقعی می‌مونه."""
+    global _last_retention_cleanup, _last_moderation_decay, _last_known_chats_cleanup
     while True:
         await asyncio.sleep(config.STATE_SAVE_INTERVAL_SECONDS)
         await save_state()
@@ -7521,6 +7539,12 @@ async def _periodic_save_loop():
         if time.time() - _last_moderation_decay > 6 * 3600:
             _last_moderation_decay = time.time()
             moderation_engine.decay_tick()
+        if time.time() - _last_known_chats_cleanup > 6 * 3600 and _bot_instance is not None:
+            _last_known_chats_cleanup = time.time()
+            try:
+                await _get_verified_known_chats(_bot_instance)
+            except Exception as e:
+                logger.warning(f"پاک‌سازی خودکار گروه‌های شناخته‌شده ناموفق بود: {e}")
 
 
 async def _post_init(application: Application):
