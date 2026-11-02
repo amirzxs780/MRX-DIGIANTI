@@ -162,6 +162,12 @@ _message_log = defaultdict(lambda: defaultdict(deque))
 # برای ثبت چت‌هایی که ربات توشون فعاله (برای /notify همگانی)
 _known_chats = set()
 
+# 🆕 بروزرسانی لحظه‌ای پنل «لیست گروه‌ها»: کلید = user_id ادمینی که این لحظه داره
+# پیام پیکر گروه‌ها رو توی پیوی می‌بینه، مقدار = (chat_id, message_id) همون پیام.
+# هر وقت _known_chats عوض بشه (رویداد لحظه‌ای اخراج ربات، یا جاروب دوره‌ای)، همین
+# پیام‌ها خودشون ویرایش می‌شن - بدون اینکه ادمین مجبور باشه پنل رو ببنده و دوباره بازش کنه.
+_open_group_pickers: dict = {}
+
 # ---------- مدیریت نسخه‌ی ربات (قابل تغییر از پنل، نه فقط از config.py) ----------
 # "current"/"changelog" override‌هایی هستن که از پنل ست می‌شن و روی config.BOT_VERSION /
 # config.CHANGELOG اولویت دارن (بدون نیاز به ویرایش کد و ری‌دیپلوی برای یه آپدیت ساده‌ی نسخه).
@@ -842,8 +848,13 @@ async def control_words_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await _run_tag_all(chat_id, context, caption=None)
         raise ApplicationHandlerStop
 
-    # ۵) پروفایل من / امتیاز من / رتبه من / سطح من (برای همه‌ی اعضا آزاده)
-    if text in ("پروفایل من", "امتیاز من", "رتبه من", "سطح من", "لول من"):
+    # ۵) پروفایل / امتیاز / رتبه / سطح (برای همه‌ی اعضا آزاده)
+    # 🐛 «دستورات مسخره» (رفع‌شده): قبلاً فقط شکل بلندِ «پروفایل من» و... کار می‌کرد؛ هیچکس
+    # اونجوری نمی‌نویسه. حالا شکل کوتاه هم جواب می‌ده، و شکل قدیمی هم هنوز کار می‌کنه.
+    if text in (
+        "پروفایل من", "امتیاز من", "رتبه من", "سطح من", "لول من",
+        "پروفایل", "امتیاز", "رتبه", "سطح", "لول",
+    ):
         await _send_profile(update, context)
         raise ApplicationHandlerStop
 
@@ -1232,6 +1243,9 @@ async def _bot_membership_changed(update: Update, context: ContextTypes.DEFAULT_
             if picked_chat_id == chat.id:
                 _admin_selected_chat.pop(admin_id, None)
         await save_state()
+        # 🆕 بروزرسانی لحظه‌ای: همین لحظه که تلگرام خبر اخراج ربات رو می‌ده، هر پنل
+        # «لیست گروه‌ها»یی که یه ادمین باز نگه داشته هم خودش به‌روز می‌شه.
+        await _push_live_group_picker_updates(context.bot)
         return
 
     # ربات به یه گروه اضافه شد (یا وضعیتش عوض شد ولی هنوز توشه) - همون لحظه توی
@@ -5188,6 +5202,45 @@ async def _execute_pending_panel_action(update: Update, context: ContextTypes.DE
         await _reply(f"🚫 {name} بن شد.")
         await save_state()
 
+    elif action.startswith("econ_set:"):
+        if not has_permission(user.id, "menu"):
+            await _reply("این اکشن فقط برای ادمین‌های مجازه.")
+            return
+        key = action.split(":", 1)[1]
+        if key not in _ECON_KEY_ORDER:
+            await _reply("این تنظیم دیگه معتبر نیست. (لغو شد؛ دوباره از پنل بزن)")
+            return
+        text = (message.text or "").strip()
+        try:
+            value = int(text)
+        except ValueError:
+            await _reply("یه عدد صحیح بفرست. (لغو شد؛ دوباره از پنل بزن)")
+            return
+        value = max(_ECON_FLOOR[key], min(_ECON_CEIL[key], value))
+        _econ_settings[chat_id][key] = value
+        await _reply(f"✅ {_ECON_LABELS[key]} روی {value} تنظیم شد.")
+        await save_state()
+
+    elif action.startswith("econ_shop:"):
+        if not has_permission(user.id, "menu"):
+            await _reply("این اکشن فقط برای ادمین‌های مجازه.")
+            return
+        key = action.split(":", 1)[1]
+        item = config.SHOP_ITEMS.get(key)
+        if not item:
+            await _reply("این کالا دیگه توی فروشگاه نیست. (لغو شد؛ دوباره از پنل بزن)")
+            return
+        text = (message.text or "").strip()
+        try:
+            value = int(text)
+        except ValueError:
+            await _reply("یه عدد صحیح بفرست. (لغو شد؛ دوباره از پنل بزن)")
+            return
+        value = max(_SHOP_PRICE_FLOOR, value)
+        _shop_price_overrides[chat_id][key] = value
+        await _reply(f"✅ قیمت «{item['name']}» روی {value} {config.CURRENCY_EMOJI} تنظیم شد.")
+        await save_state()
+
     elif action == "notify":
         if not has_permission(user.id, "notify"):
             await _reply("این اکشن فقط برای ادمین‌های مجازه.")
@@ -6008,7 +6061,7 @@ def _econ_admin_header(chat_id: int, view: str = "main") -> str:
     if view == "shop":
         return (
             box_top + "┃ 🛒 مدیریت فروشگاه\n" + box_group + box_bottom +
-            "با ➖ / ➕ قیمت هر کالا رو تنظیم کن، و با دکمه‌ی زیرش می‌تونی نمایان/مخفیش کنی."
+            "روی «✏️ وارد کردن عدد» بزن و قیمت جدید رو بفرست؛ با دکمه‌ی زیرش هم می‌تونی نمایان/مخفیش کنی."
         )
     if view == "stats":
         return (
@@ -6027,7 +6080,7 @@ def _econ_admin_header(chat_id: int, view: str = "main") -> str:
         )
     return (
         box_top + "┃ اقتصاد • XP • قرعه‌کشی\n" + box_group + box_bottom +
-        "با دکمه‌های ➖ / ➕ مقدارها رو تنظیم کن.\n"
+        "روی «✏️ وارد کردن عدد» بزن و همون لحظه عدد موردنظرت رو بفرست.\n"
         "برای سکه/XP/لول یک نفر خاص یا همه‌ی اعضا با هم، از «راهنمای دستورات دستی» استفاده کن."
     )
 
@@ -6045,12 +6098,10 @@ def _build_econ_admin_markup(chat_id: int, view: str = "main") -> InlineKeyboard
     es = _econ_settings[chat_id]
     rows = []
     for key in _ECON_KEY_ORDER:
-        step = _ECON_STEP[key]
         rows.append(
             [
-                InlineKeyboardButton("➖", callback_data=f"econset:{key}:-{step}"),
                 InlineKeyboardButton(f"{_ECON_LABELS[key]}: {es[key]}", callback_data="noop"),
-                InlineKeyboardButton("➕", callback_data=f"econset:{key}:{step}"),
+                InlineKeyboardButton("✏️ وارد کردن عدد", callback_data=f"ask:econ_set:{key}"),
             ]
         )
     rows.append(
@@ -6089,9 +6140,8 @@ def _build_econ_shop_markup(chat_id: int) -> InlineKeyboardMarkup:
         state_label = "🙈 مخفیه، بزن نمایان شه" if key in hidden else "👁 نمایانه، بزن مخفی شه"
         rows.append(
             [
-                InlineKeyboardButton("➖", callback_data=f"econshop:{key}:-{_SHOP_PRICE_STEP}"),
                 InlineKeyboardButton(f"{item['name']}: {price} {config.CURRENCY_EMOJI}", callback_data="noop"),
-                InlineKeyboardButton("➕", callback_data=f"econshop:{key}:{_SHOP_PRICE_STEP}"),
+                InlineKeyboardButton("✏️ وارد کردن عدد", callback_data=f"ask:econ_shop:{key}"),
             ]
         )
         rows.append([InlineKeyboardButton(state_label, callback_data=f"econshop:toggle:{key}")])
@@ -6358,11 +6408,12 @@ ECON_ADMIN_HELP_TEXT = (
     "╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
 
     "┏━━━『 🎛 تنظیمات با دکمه (بدون تایپ) 』━━━┓\n"
-    "┃ توی خود پنل، پاداش روزانه، سکه‌ی فعالیت،\n"
-    "┃ XP هر پیام و مدت قرعه کشی رو با دکمه های\n"
-    "┃ ➖ / ➕ کم و زیاد کن. برای فروشگاه هم دکمه\n"
-    "┃ قیمت و مخفی/نمایان کردن هست. اینا دیگه\n"
-    "┃ نیاز به دستور ندارن.\n"
+    "┃ توی خود پنل، روی «✏️ وارد کردن عدد» بزن و\n"
+    "┃ عدد موردنظر رو برای پاداش روزانه، سکه‌ی\n"
+    "┃ فعالیت، XP هر پیام یا مدت قرعه‌کشی بفرست.\n"
+    "┃ برای فروشگاه هم همین دکمه برای قیمت، و یه\n"
+    "┃ دکمه‌ی جدا برای مخفی/نمایان کردن هست. اینا\n"
+    "┃ دیگه نیاز به دستور ندارن.\n"
     "┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n"
 
     "┏━━━『 💰 سکه • یک نفر 』━━━┓\n"
@@ -6562,7 +6613,30 @@ async def _get_verified_known_chats(bot) -> list[int]:
             _known_chats.discard(chat_id)
             _chat_titles.pop(chat_id, None)
         await save_state()
+        await _push_live_group_picker_updates(bot)
     return verified
+
+
+async def _push_live_group_picker_updates(bot):
+    """🆕 بروزرسانی لحظه‌ای: این تابع هر جا _known_chats واقعاً عوض بشه صدا زده می‌شه
+    (رویداد لحظه‌ای my_chat_member، یا جاروب دوره‌ای هر ۶ ساعت توی _periodic_save_loop)
+    و همون لحظه هر پیام «لیست گروه‌ها»یی که یه ادمین توی پیوی باز نگه داشته رو ویرایش
+    می‌کنه - بدون اینکه خودِ ادمین کاری کنه. اگه پیام دیگه قابل‌ویرایش نباشه (پاک شده،
+    خیلی قدیمیه، یا ادمین ربات رو بلاک کرده)، فقط ردش می‌کنیم از لیست."""
+    if not _open_group_pickers:
+        return
+    groups = sorted(_known_chats)
+    text = _group_picker_text()
+    markup = _group_picker_markup(groups, bot.username)
+    dead_users = []
+    for user_id, (chat_id, message_id) in list(_open_group_pickers.items()):
+        try:
+            await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=markup)
+        except Exception as e:
+            if "not modified" not in str(e).lower():
+                dead_users.append(user_id)
+    for user_id in dead_users:
+        _open_group_pickers.pop(user_id, None)
 
 
 def _group_picker_markup(chats, bot_username: str | None = None) -> InlineKeyboardMarkup:
@@ -6608,9 +6682,10 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "هنوز هیچ گروهی شناخته نشده. اول ربات رو به یه گروه اضافه و ادمینش کن."
             )
             return
-        await update.effective_message.reply_text(
+        sent = await update.effective_message.reply_text(
             _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
         )
+        _open_group_pickers[update.effective_user.id] = (sent.chat_id, sent.message_id)
         return
     await update.effective_message.reply_text(
         _menu_header_text(chat.id),
@@ -6628,6 +6703,13 @@ def _cycle_value(current, options):
 async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
+
+    # 🆕 بروزرسانی لحظه‌ای: فرض رو می‌ذاریم با هر کلیکی، کاربر از صفحه‌ی «لیست گروه‌ها»
+    # خارج شده؛ فقط همون سه مسیری که واقعاً دوباره این لیست رو نشون می‌دن (پایین‌تر)
+    # دوباره ثبتش می‌کنن. این‌جوری push لحظه‌ای (بعدتر از رویداد اخراج ربات) هیچ‌وقت
+    # رو صفحه‌ای که الان یه منوی دیگه‌ست overwrite نمی‌کنه.
+    if user:
+        _open_group_pickers.pop(user.id, None)
 
     # راهنمای دستورات (/help) برای همه کاربرها عمومیه (نه فقط ادمین‌های
     # مجاز پنل /menu)، پس این چهار مسیر باید قبل از چک دسترسی «menu» جواب
@@ -6713,6 +6795,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text(
                 _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
             )
+            _open_group_pickers[user.id] = (query.message.chat_id, query.message.message_id)
             return
 
         grp_chat_id = int(grp_parts[2])
@@ -6780,6 +6863,29 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if query.data.startswith("ask:"):
         action = query.data.split(":", 1)[1]
         prompt = _PANEL_ASK_PROMPTS.get(action)
+        if prompt is None and action.startswith("econ_set:"):
+            # 🐛 دکمه‌های ➖/➕ پنل ویژه‌ی اقتصاد حذف شدن؛ حالا به‌جاشون همینجا با عدد
+            # فعلی و راهنما، یه پیام می‌پرسه عدد دلخواه چیه (بدون نیاز به کلیک پشت کلیک).
+            key = action.split(":", 1)[1]
+            if key in _ECON_KEY_ORDER:
+                label = _ECON_LABELS[key]
+                current = _econ_settings[chat_id][key]
+                prompt = (
+                    f"✏️ {label}\n"
+                    f"مقدار فعلی: {current}\n"
+                    f"عدد موردنظر رو وارد کنید. (بین {_ECON_FLOOR[key]} تا {_ECON_CEIL[key]})"
+                )
+        elif prompt is None and action.startswith("econ_shop:"):
+            key = action.split(":", 1)[1]
+            item = config.SHOP_ITEMS.get(key)
+            if item:
+                overrides = _shop_price_overrides[chat_id]
+                current = overrides.get(key, item["price"])
+                prompt = (
+                    f"✏️ قیمت «{item['name']}»\n"
+                    f"قیمت فعلی: {current} {config.CURRENCY_EMOJI}\n"
+                    f"عدد موردنظر رو وارد کنید. (حداقل {_SHOP_PRICE_FLOOR})"
+                )
         if not prompt:
             await query.answer()
             return
@@ -6798,6 +6904,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text(
                 _group_picker_text(), reply_markup=_group_picker_markup(groups, context.bot.username)
             )
+            _open_group_pickers[user.id] = (query.message.chat_id, query.message.message_id)
         else:
             await query.edit_message_text(_menu_header_text(chat_id), reply_markup=_build_main_menu_markup(chat_id))
         return
@@ -7577,6 +7684,7 @@ PERSIAN_COMMAND_ALIASES = {
     "فعال ترین ها": top_command,
     "آمار گروه": group_stats_command,
     "فعالیت من": activity_command,
+    "فعالیت": activity_command,
     "برترین های فعالیت": leaderboard_command,
     "دستاوردهای من": achievements_command,
     "روابط": relations_list_command,
@@ -7589,6 +7697,7 @@ PERSIAN_COMMAND_ALIASES = {
     "کلمات دشمن": enemywords_list_command,
     "کلمات دوست": friendwords_list_command,
     "اخطارهای من": warnings_command,
+    "اخطارها": warnings_command,
     "میوت شده ها": muted_list_command,
     "لیست بن": banlist_command,
     "لیست وی آی پی": vip_list_command,
@@ -7644,10 +7753,12 @@ PERSIAN_COMMAND_ALIASES = {
     # پنل ویژه ادمین (سکه/XP/لول/اقتصاد/فروشگاه)
     "تنظیم سکه": setcoins_command,
     "اضافه سکه": addcoins_command,
+    "سکه": addcoins_command,  # کوتاه‌شده‌ی «اضافه سکه» - برای «ست کردن» دقیق از «تنظیم سکه» استفاده کن
     "تنظیم سکه همه": setcoinsall_command,
     "اضافه سکه همه": addcoinsall_command,
     "تنظیم ایکسپی": setxp_command,
     "اضافه ایکسپی": addxp_command,
+    "ایکسپی": addxp_command,  # کوتاه‌شده‌ی «اضافه ایکسپی» - برای «ست کردن» دقیق از «تنظیم ایکسپی» استفاده کن
     "تنظیم ایکسپی همه": setxpall_command,
     "اضافه ایکسپی همه": addxpall_command,
     "تنظیم لول": setlevel_command,
@@ -7704,8 +7815,10 @@ PERSIAN_COMMAND_ALIASES = {
     "لیست لقب ها": profile_engine.toplqab_command,
     "احترام": profile_engine.rep_command,
     "وضعیت من": profile_engine.stats_command,
+    "وضعیت": profile_engine.stats_command,
     "پرستیژ": profile_engine.prestige_command,
     "کالکشن من": profile_engine.collections_command,
+    "کالکشن": profile_engine.collections_command,
     "غذا خوردن": profile_engine.eat_command,
     "استراحت": profile_engine.rest_command,
     "فروشگاه لباس": economy_clothing.clothing_shop_command,
@@ -7737,6 +7850,7 @@ PERSIAN_COMMAND_ALIASES = {
     "خرید کسب‌وکار": economy_business.buy_business_command,
     "فروش کسب‌وکار": economy_business.sell_business_command,
     "کسب‌وکار من": economy_business.my_business_command,
+    "کسب‌وکار": economy_business.my_business_command,
     "استخدام": economy_business.hire_command,
     "اخراج": economy_business.fire_command,
     "خرید موجودی": economy_business.buy_inventory_command,
@@ -7821,6 +7935,7 @@ PERSIAN_COMMAND_ALIASES = {
     "خرید ملک": economy_property.buy_property_command,
     "فروش ملک": economy_property.sell_property_command,
     "ملک من": economy_property.my_property_command,
+    "ملک": economy_property.my_property_command,
     "اشتراک ملک": economy_property.share_property_command,
     "لغو اشتراک ملک": economy_property.unshare_property_command,
     "فروشگاه اثاثیه": economy_property.furniture_shop_command,
@@ -7872,6 +7987,7 @@ PERSIAN_COMMAND_ALIASES = {
     "خرید کالا": economy_blackmarket.buy_command,
     "فروش کالا": economy_blackmarket.sell_command,
     "کالای من": economy_blackmarket.my_items_command,
+    "کالاها": economy_blackmarket.my_items_command,
     "حراجی": economy_blackmarket.auction_command,
 
     # فاز ۷: دنیای زیرزمینی (economy_underground)
