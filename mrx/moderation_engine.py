@@ -207,6 +207,19 @@ def _resolve_escalation_step(offense_count: int) -> dict:
     return step
 
 
+def _escalation_preview(warn_count: int) -> str | None:
+    """یه خط کوتاه که به کاربر نشون می‌ده اخطار *بعدی* چه اتفاقی می‌افته —
+    شفافیت پیشگیرانه، بدون این‌که منطق نردبان رو دوباره بنویسه."""
+    step = _resolve_escalation_step(warn_count + 1)
+    action = step.get("action")
+    if action == "mute":
+        return f"⏭ هشدار: اخطار بعدی = میوت {_fmt_duration(step.get('minutes', 0) * 60)}"
+    if action == "ban":
+        days = step.get("days", 0)
+        return f"⏭ هشدار: اخطار بعدی = بن {_fmt_duration(days * 86400 if days else None)}"
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 📈 Decay Manager
 # ---------------------------------------------------------------------------
@@ -255,16 +268,19 @@ async def _send_mod_log(context, chat_id: int, action: str, user_id: int, displa
         return
     emoji = _ACTION_EMOJI.get(action, "🛡️")
     label = _ACTION_LABEL.get(action, action)
-    text = (
-        f"🛡️ گزارش مدیریت\n\n"
-        f"{emoji} اقدام: {label}\n\n"
-        f"👤 کاربر: {display_name}\n"
-        f"🆔 آیدی: {user_id}\n"
-        f"📌 دلیل: {reason or '—'}\n"
-        f"⏱ مدت: {duration or '—'}\n"
-        f"🤖 منبع: {source}\n"
-        f"👮 ادمین: {admin_name or '—'}"
-    )
+    rec = _user_record(chat_id, user_id)
+    risk = int(rec.get("risk_score", 0))
+    lines = [
+        f"{emoji} {label} ثبت شد",
+        f"👤 {display_name}  (ID: {user_id})",
+        f"📌 دلیل: {reason or '—'}",
+    ]
+    if duration and duration != "—":
+        lines.append(f"⏱ مدت: {duration}")
+    lines.append(f"🤖 منبع: {source}")
+    lines.append(f"👮 ادمین: {admin_name or 'خودکار'}")
+    lines.append(f"📊 ریسک فعلی: {risk}/100 ({risk_label(risk)})")
+    text = "\n".join(lines)
     try:
         await host._log_admin_action(context, chat_id, text)
     except Exception as e:
@@ -334,8 +350,15 @@ async def punish(context, chat_id: int, user_id: int, display_name: str, action:
             duration_txt = None
             if notify:
                 count = len(rec["warns"])
-                text = f"⚠️ اخطار به {display_name}\n📌 دلیل: {reason or '—'}\n🔢 شماره اخطار: {count}"
-                await _safe_send(context, chat_id, text, action, message)
+                lines = [
+                    f"⚠️ اخطار برای {display_name}",
+                    f"📌 دلیل: {reason or '—'}",
+                    f"🔢 اخطار شماره {count}",
+                ]
+                hint = _escalation_preview(count)
+                if hint:
+                    lines.append(hint)
+                await _safe_send(context, chat_id, "\n".join(lines), action, message)
 
         elif action == "mute":
             until = None if not duration_seconds else int(time.time()) + duration_seconds
@@ -357,8 +380,12 @@ async def punish(context, chat_id: int, user_id: int, display_name: str, action:
             except Exception:
                 pass
             if notify:
-                text = f"🔇 {display_name} میوت شد.\n📌 دلیل: {reason or '—'}\n⏱ مدت: {duration_txt}"
-                await _safe_send(context, chat_id, text, action, message)
+                lines = [
+                    f"🔇 {display_name} میوت شد",
+                    f"📌 دلیل: {reason or '—'}",
+                    f"⏱ مدت: {duration_txt}",
+                ]
+                await _safe_send(context, chat_id, "\n".join(lines), action, message)
 
         elif action == "unmute":
             await context.bot.restrict_chat_member(
@@ -375,7 +402,8 @@ async def punish(context, chat_id: int, user_id: int, display_name: str, action:
             duration_txt = None
             _bump_admin_stat(chat_id, admin_id, "unmute")
             if notify:
-                await _safe_send(context, chat_id, f"🔊 {display_name} آن‌میوت شد.", action, message)
+                text = f"🔊 {display_name} آن‌میوت شد و دوباره می‌تونه توی گروه پیام بده."
+                await _safe_send(context, chat_id, text, action, message)
 
         elif action == "ban":
             until = None if not duration_seconds else int(time.time()) + duration_seconds
@@ -394,8 +422,12 @@ async def punish(context, chat_id: int, user_id: int, display_name: str, action:
             except Exception:
                 pass
             if notify:
-                text = f"🚫 {display_name} بن شد.\n📌 دلیل: {reason or '—'}\n⏱ مدت: {duration_txt}"
-                await _safe_send(context, chat_id, text, action, message)
+                lines = [
+                    f"🚫 {display_name} از گروه بن شد",
+                    f"📌 دلیل: {reason or '—'}",
+                    f"⏱ مدت: {duration_txt}",
+                ]
+                await _safe_send(context, chat_id, "\n".join(lines), action, message)
 
         elif action == "unban":
             await context.bot.unban_chat_member(chat_id=chat_id, user_id=user_id, only_if_banned=True)
@@ -409,7 +441,8 @@ async def punish(context, chat_id: int, user_id: int, display_name: str, action:
             duration_txt = None
             _bump_admin_stat(chat_id, admin_id, "unban")
             if notify:
-                await _safe_send(context, chat_id, f"✅ {display_name} آن‌بن شد.", action, message)
+                text = f"✅ {display_name} آن‌بن شد و دوباره می‌تونه به گروه برگرده."
+                await _safe_send(context, chat_id, text, action, message)
 
         elif action == "kick":
             await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
@@ -418,7 +451,8 @@ async def punish(context, chat_id: int, user_id: int, display_name: str, action:
             _bump_admin_stat(chat_id, admin_id, "kick")
             duration_txt = None
             if notify:
-                await _safe_send(context, chat_id, f"👢 {display_name} اخراج شد.", action, message)
+                text = f"👢 {display_name} از گروه اخراج شد (می‌تونه دوباره جوین بشه)."
+                await _safe_send(context, chat_id, text, action, message)
         else:
             return {"ok": False, "blocked": "unknown_action"}
 

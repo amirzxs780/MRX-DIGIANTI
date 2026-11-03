@@ -337,8 +337,8 @@ def _decayed_score(entry: dict) -> float:
 def get_role(chat_id: int, user_id: int) -> str:
     import bot as host  # local import - جلوگیری از circular import
 
-    admin_ids = list(getattr(config, "ADMIN_IDS", []))
-    if admin_ids and user_id == admin_ids[0]:
+    import owner_panel  # local import - جلوگیری از circular import
+    if owner_panel.is_owner(user_id):
         return ROLE_OWNER
     if host.is_admin(user_id):
         return ROLE_ADMIN

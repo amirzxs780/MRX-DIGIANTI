@@ -63,6 +63,7 @@ import config
 import lock_engine
 import spam_engine
 import moderation_engine
+import autoreply_engine
 import profile_engine
 import economy_engine
 import economy_core
@@ -94,6 +95,7 @@ import economy_admin
 import economy_panel
 import poll_engine
 import purge_engine
+import owner_panel
 
 # ---------- تایم‌زون نمایش تاریخ/ساعت (برای پیام‌های ورود/خروج و...) ----------
 # اگه zoneinfo یا دیتابیس tzdata (مثلاً روی بعضی نسخه‌های ویندوز) در دسترس نباشه،
@@ -441,6 +443,7 @@ async def save_state():
         lock_engine.save_state(),
         spam_engine.save_state(),
         moderation_engine.save_state(),
+        autoreply_engine.save_state(),
         profile_engine.save_state(),
         economy_engine.save_state(),
         economy_core.save_state(),
@@ -466,6 +469,7 @@ async def save_state():
         economy_events.save_state(),
         poll_engine.save_state(),
         purge_engine.save_state(),
+        owner_panel.save_state(),
         return_exceptions=True,
     )
     for r in results:
@@ -478,6 +482,7 @@ def load_state():
     lock_engine.load_state()
     spam_engine.load_state()
     moderation_engine.load_state()
+    autoreply_engine.load_state()
     profile_engine.load_state()
     economy_engine.load_state()
     economy_core.load_state()
@@ -503,6 +508,7 @@ def load_state():
     economy_events.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
+    owner_panel.load_state()
     data = None
     if os.path.exists(config.STATE_FILE):
         try:
@@ -695,18 +701,24 @@ def get_setting(chat_id: int, key: str) -> bool:
 
 
 def is_admin(user_id: int) -> bool:
-    return user_id in config.ADMIN_IDS
+    # علاوه بر لیست ثابت config.ADMIN_IDS، مالک ربات و ادمین‌هایی که از «پنل مالک»
+    # (owner_panel.py) به‌صورت پویا ساخته شدن (بدون نیاز به ویرایش config.py) هم
+    # ادمین حساب می‌شن.
+    return user_id in config.ADMIN_IDS or owner_panel.is_admin_or_owner(user_id)
 
 
 def has_permission(user_id: int, permission: str) -> bool:
     """چک می‌کنه که این ادمین اجازه‌ی این کار خاص رو داره یا نه.
-    اگه آیدیش توی ADMIN_PERMISSIONS نباشه، یعنی دسترسی کامل داره (پیش‌فرض)."""
-    if user_id not in config.ADMIN_IDS:
-        return False
-    allowed = config.ADMIN_PERMISSIONS.get(user_id)
-    if allowed is None:
-        return True
-    return permission in allowed
+    اگه آیدیش توی ADMIN_PERMISSIONS نباشه، یعنی دسترسی کامل داره (پیش‌فرض).
+    برای ادمین‌هایی که توی config.ADMIN_IDS نیستن، چک بعدی از owner_panel انجام
+    می‌شه: مالک ربات همیشه True، ادمین پویا فقط همون دسترسی‌هایی که مالک از پنل
+    بهش داده."""
+    if user_id in config.ADMIN_IDS:
+        allowed = config.ADMIN_PERMISSIONS.get(user_id)
+        if allowed is None:
+            return True
+        return permission in allowed
+    return owner_panel.has_permission(user_id, permission)
 
 
 # ---------- توابع کمکی افزودنی‌های حرفه‌ای (XP/Level/لقب/اخطار حرفه‌ای/لاگ) ----------
@@ -936,11 +948,10 @@ async def auto_reply_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     if settings.get("keyword_reply", False):
-        text_lower = message.text.lower()
-        for keyword, reply in config.AUTO_REPLIES.items():
-            if keyword.lower() in text_lower:
-                await _safe_reply(message, reply)
-                return
+        reply = autoreply_engine.find_reply(message.chat_id, message.text)
+        if reply:
+            await _safe_reply(message, reply)
+            return
 
     # تصمیم بگیر که با توجه به حالت انتخاب‌شده، به این کاربر (ادمین یا نه) AI جواب بده یا نه
     ai_mode = _ai_reply_mode[message.chat_id]
@@ -5449,6 +5460,15 @@ HELP_SECTIONS = {
         "┃ جای‌گزین‌های متن: {full_name} {username_line}\n"
         "┃ {user_id} {date} {time} {member_count}\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
+    "autoreply": ("💬 پاسخ‌دهی خودکار", False,
+        "┏━━━『 💬 پاسخ‌دهی خودکار 』━━━┓\n"
+        "┃ ‎/autoreplies «لیست پاسخ خودکار» › لیست کلیدواژه‌ها\n"
+        "┃ ‎/addautoreply «افزودن پاسخ خودکار» <کلیدواژه> <پاسخ>\n"
+        "┃ › هر کلیدواژه می‌تونه چند پاسخ داشته باشه (تصادفی انتخاب می‌شه)\n"
+        "┃ ‎/removeautoreply «حذف پاسخ خودکار» <کلیدواژه>\n"
+        "┃ › روشن/خاموش کلی: «پاسخ خودکار روشن» / «پاسخ خودکار خاموش»\n"
+        "┃ ⚠️ افزودن/حذف فقط برای ادمین‌های مجاز (دسترسی «منو»)\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "tag": ("🏷️ تگ دسته‌جمعی", False,
         "┏━━━『 🏷️ تگ دسته‌جمعی 』━━━┓\n"
         "┃ ‎/tag «تگ» [متن دلخواه]\n"
@@ -5600,6 +5620,41 @@ ECONOMY_SECTIONS = {
         "┃ ‎/sellproperty «فروش ملک» <شناسه>\n"
         "┃ ‎/myproperty «ملک من» [شناسه]\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
+    "eco_district": ("🗺️ منطقه‌ی زندگی", False,
+        "┏━━━『 🗺️ منطقه‌ی زندگی 』━━━┓\n"
+        "┃ ‎/district «منطقه» › لیست منطقه‌ها + وضعیت خودت\n"
+        "┃ ‎/movedistrict «تغییر منطقه» <نام>\n"
+        "┃ › منطقه روی قیمت ملک/خودرو/کسب‌وکار و جرم اثر می‌ذاره\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
+    "eco_vehicle": ("🚗 خودرو", False,
+        "┏━━━『 🚗 خودرو 』━━━┓\n"
+        "┃ ‎/vehicle «خودرو» › لیست انواع قابل‌خرید\n"
+        "┃ ‎/buyvehicle «خرید خودرو» <نوع>\n"
+        "┃ ‎/myvehicle «خودرو من» › لیست خودروهای خودت\n"
+        "┃ ‎/drive «رانندگی» <شناسه>\n"
+        "┃ ‎/repairvehicle «تعمیر خودرو» <شناسه>\n"
+        "┃ ‎/refuel «سوخت‌گیری» <شناسه>\n"
+        "┃ ‎/insurevehicle «بیمه خودرو» <شناسه>\n"
+        "┃ ‎/vehicletax «مالیات خودرو» <شناسه>\n"
+        "┃ ‎/tunevehicle «تیونینگ خودرو» <شناسه> [دسته]\n"
+        "┃ ‎/sellvehicle «فروش خودرو» <شناسه>\n"
+        "┃ ‎/transfervehicle «انتقال خودرو» <شناسه> (ریپلای)\n"
+        "┃ ‎/vehiclehistory «تاریخچه خودرو» <شناسه>\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
+    "eco_business": ("🏢 کسب‌وکار", False,
+        "┏━━━『 🏢 کسب‌وکار 』━━━┓\n"
+        "┃ ‎/businesses «کسب‌وکارها» › لیست انواع قابل‌خرید\n"
+        "┃ ‎/buybusiness «خرید کسب‌وکار» <نوع>\n"
+        "┃ ‎/mybusiness «کسب‌وکار من» › لیست کسب‌وکارهای خودت\n"
+        "┃ ‎/hire «استخدام» <شناسه> • ‎/fire «اخراج» <شناسه>\n"
+        "┃ ‎/buyinventory «خرید موجودی» <شناسه> <تعداد>\n"
+        "┃ ‎/advertise «تبلیغات» <شناسه>\n"
+        "┃ ‎/upgradebusiness «ارتقای کسب‌وکار» <شناسه>\n"
+        "┃ ‎/businesstax «مالیات کسب‌وکار» <شناسه>\n"
+        "┃ ‎/businessprofit «سود کسب‌وکار» <شناسه>\n"
+        "┃ ‎/sellbusiness «فروش کسب‌وکار» <شناسه>\n"
+        "┃ ‎/businesshistory «تاریخچه کسب‌وکار» <شناسه>\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_marriage": ("💍 ازدواج", False,
         "┏━━━『 💍 ازدواج 』━━━┓\n"
         "┃ ‎/propose «درخواست ازدواج» (ریپلای)\n"
@@ -5638,6 +5693,14 @@ ECONOMY_SECTIONS = {
         "┃ ‎/undergroundmission «ماموریت زیرزمینی»\n"
         "┃ ‎/contract «قرارداد» › وضعیت خودت\n"
         "┗━━━━━━━━━━━━━━━━━━━━━━┛"),
+    "eco_clothing": ("👔 لباس", False,
+        "┏━━━『 👔 لباس 』━━━┓\n"
+        "┃ ‎/clothingshop «فروشگاه لباس» › لیست آیتم‌ها\n"
+        "┃ ‎/buyclothing «خرید لباس» <کلید یا نام>\n"
+        "┃ ‎/wear «پوشیدن» <کلید یا نام>\n"
+        "┃ ‎/unwear «درآوردن» <Slot>\n"
+        "┃ ‎/outfit «ست من» › چی پوشیدی الان\n"
+        "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "eco_inventory": ("🎒 اینونتوری", False,
         "┏━━━『 🎒 اینونتوری 』━━━┓\n"
         "┃ ‎/myitems «کیف» یا «اینونتوری» یا «آیتم های من»\n"
@@ -7604,8 +7667,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     # این ربات شخصیه: اگه یه غریبه توی پیوی /help بزنه، دستورات مدیریتی نشونش نمی‌دیم.
-    # اگه فکر می‌کنی ادمینی ولی این پیام رو می‌بینی، یعنی آیدی عددی‌ت توی config.py
-    # (لیست ADMIN_IDS) نیست - آیدی عددیت رو از @userinfobot بگیر و اونجا اضافه کن.
+    # اگه فکر می‌کنی ادمینی ولی این پیام رو می‌بینی: یا آیدی عددی‌ت توی config.py
+    # (OWNER_IDS) نیست، یا هنوز از «پنل مالک» (‎/ownerpanel‎ توی پیوی مالک) ادمین
+    # نشدی - روش دستیِ config.ADMIN_IDS دیگه استفاده نمی‌شه.
     if chat and chat.type == "private" and not is_admin(user_id):
         logger.info(f"کاربر {user_id} (غیرادمین) توی پیوی ‎/help زد.")
         await update.effective_message.reply_text(
@@ -8024,6 +8088,13 @@ PERSIAN_COMMAND_ALIASES = {
     "گزارش ادمین": economy_admin.admin_log_command,
     "راهنمای اقتصاد": economy_admin.economy_help_command,
 
+    # پاسخ‌دهی خودکار (autoreply_engine) — روشن/خاموش کلی همچنان با «پاسخ خودکار روشن/خاموش»
+    "افزودن پاسخ خودکار": autoreply_engine.add_command,
+    "حذف پاسخ خودکار": autoreply_engine.remove_command,
+    "لیست پاسخ خودکار": autoreply_engine.list_command,
+    "پاسخ های خودکار": autoreply_engine.list_command,
+    "پاسخ‌های خودکار": autoreply_engine.list_command,
+
     # نظرسنجی پیشرفته (poll_engine)
     "بستن نظرسنجی": poll_engine.pollclose_command,
     "حذف نظرسنجی": poll_engine.polldelete_command,
@@ -8071,6 +8142,9 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("notify", notify_command))
+    app.add_handler(CommandHandler("addautoreply", autoreply_engine.add_command))
+    app.add_handler(CommandHandler("removeautoreply", autoreply_engine.remove_command))
+    app.add_handler(CommandHandler("autoreplies", autoreply_engine.list_command))
     app.add_handler(CommandHandler("version", version_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("top", top_command))
@@ -8165,6 +8239,13 @@ def main():
     app.add_handler(CallbackQueryHandler(spam_engine.captcha_callback_handler, pattern=r"^spamcaptcha:"))
     app.add_handler(CallbackQueryHandler(spam_engine.panel_callback_handler, pattern=r"^secpanel:"))
     app.add_handler(CallbackQueryHandler(purge_engine.purge_callback_handler, pattern=r"^purgeop:"))
+
+    # ---------- پنل مالک (مدیریت پویای ادمین‌ها، بدون نیاز به ویرایش config.py) ----------
+    app.add_handler(CommandHandler("ownerpanel", owner_panel.ownerpanel_command))
+    app.add_handler(CommandHandler("adminpanel", owner_panel.ownerpanel_command))
+    app.add_handler(CommandHandler("adminlogin", owner_panel.adminlogin_command))
+    app.add_handler(CommandHandler("claimadmin", owner_panel.claimadmin_command))
+    app.add_handler(CallbackQueryHandler(owner_panel.panel_callback_handler, pattern=r"^op:"))
 
     # پروفایل / XP / لقب اختصاصی
     app.add_handler(CommandHandler("profile", profile_command))
@@ -8427,6 +8508,13 @@ def main():
     # ورودی دنباله‌دار پنل (افزودن دشمن/دوست، بن/میوت سریع، ویرایش متن و ...) - باید زودتر از همه چک بشه
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, pending_panel_input_handler), group=-20
+    )
+
+    # ورودی متنیِ ویزارد «پنل مالک» (یوزرنیم ادمین جدید) - فقط پیوی، فقط مالک؛ باید
+    # زودتر از پاسخ‌دهنده‌ی هوش‌مصنوعیِ پیوی (dm_ai_reply_handler) چک بشه
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, owner_panel.text_input_handler),
+        group=-20,
     )
 
     # کنترل کلمات فارسی (روشن/خاموش ربات، ترمیناتور، هر تنظیم دیگه، «تگ همه») - زودتر از همه
