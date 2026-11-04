@@ -4601,22 +4601,10 @@ async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # چک اولیه: خود ربات باید توی این گروه ادمین باشه و دقیقاً دسترسی
-    # «Add New Admins» (can_promote_members) بهش داده شده باشه - این یه دسترسی جداست
-    # و صرفاً «ادمین بودن» ربات کافی نیست، باید موقع ادمین کردن ربات این گزینه‌ی خاص هم تیک بخوره.
-    try:
-        bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
-        if getattr(bot_member, "can_promote_members", False) is not True:
-            await update.effective_message.reply_text(
-                "ربات دسترسی «Add New Admins» رو نداره.\n"
-                "توی تنظیمات ادمین‌های گروه، برو روی خود ربات و مطمئن شو گزینه‌ی "
-                "«Add New Admins» (اضافه کردن ادمین جدید) براش روشنه - صرفاً ادمین بودن کافی نیست، "
-                "باید همین گزینه‌ی خاص هم فعال باشه."
-            )
-            return
-    except Exception as e:
-        logger.warning(f"چک دسترسی ربات ناموفق بود: {e}")
-
+    # ⚡️ سرعت: قبلاً اینجا یه get_chat_member جدا برای چک دسترسی خودِ ربات
+    # می‌زدیم که یه رفت‌وبرگشت کامل اضافه به سرور تلگرام بود و کل دستور رو کند
+    # می‌کرد. الان مستقیم promote_chat_member رو امتحان می‌کنیم؛ اگه ربات دسترسی
+    # نداشته باشه، خودِ تلگرام با یه خطای مشخص رد می‌کنه که پایین تشخیص داده می‌شه.
     try:
         await context.bot.promote_chat_member(
             chat_id=chat_id,
@@ -4628,23 +4616,36 @@ async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             can_manage_chat=True,
             can_promote_members=True,
         )
-        title_text, title_ok = await _apply_admin_custom_title(context, chat_id, target_id, title)
-        text = f"👑 {name} ادمین گروه شد."
-        if title:
-            if title_ok and title_text:
-                text += f" (لقب: {title_text})"
-            else:
-                text += (
-                    " ⚠️ ولی لقب تنظیم نشد (تلگرام لقبِ ادمین رو حداکثر ۱۶ کاراکتر قبول می‌کنه "
-                    "و ایموجی توش مجاز نیست؛ با ‎/promote دوباره یه لقبِ ساده‌تر امتحان کن)."
-                )
-        await update.effective_message.reply_text(text)
-        await _log_admin_action(
-            context, chat_id, f"👑 Promote\n👤 {name}\n🧑‍💼 توسط: {update.effective_user.first_name}"
-        )
     except Exception as e:
         logger.warning(f"ارتقا ناموفق بود: {e}")
-        await update.effective_message.reply_text(f"ارتقا انجام نشد. خطای تلگرام: {e}")
+        err = str(e).lower()
+        if "not enough rights" in err or "chat_admin_required" in err:
+            await update.effective_message.reply_text(
+                "ربات دسترسی «Add New Admins» رو نداره.\n"
+                "توی تنظیمات ادمین‌های گروه، برو روی خود ربات و مطمئن شو گزینه‌ی "
+                "«Add New Admins» (اضافه کردن ادمین جدید) براش روشنه - صرفاً ادمین بودن کافی نیست، "
+                "باید همین گزینه‌ی خاص هم فعال باشه."
+            )
+        else:
+            await update.effective_message.reply_text(f"ارتقا انجام نشد. خطای تلگرام: {e}")
+        return
+
+    title_text, title_ok = await _apply_admin_custom_title(context, chat_id, target_id, title)
+    text = f"👑 {name} ادمین گروه شد."
+    if title:
+        if title_ok and title_text:
+            text += f" (لقب: {title_text})"
+        else:
+            text += (
+                " ⚠️ ولی لقب تنظیم نشد (تلگرام لقبِ ادمین رو حداکثر ۱۶ کاراکتر قبول می‌کنه "
+                "و ایموجی توش مجاز نیست؛ با ‎/promote دوباره یه لقبِ ساده‌تر امتحان کن)."
+            )
+    await update.effective_message.reply_text(text)
+    # ⚡️ لاگِ کانال مدیریتی (اگه تنظیم شده باشه) بعد از جواب‌دادن به ادمین، در پس‌زمینه
+    # فرستاده می‌شه - اگه کانال لاگ کند/پرترافیک باشه، دیگه معطلِ جوابِ خودِ دستور نمی‌شه.
+    asyncio.create_task(
+        _log_admin_action(context, chat_id, f"👑 Promote\n👤 {name}\n🧑‍💼 توسط: {update.effective_user.first_name}")
+    )
 
 
 async def demote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4669,12 +4670,80 @@ async def demote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             can_manage_chat=False,
         )
         await update.effective_message.reply_text(f"{name} از ادمینی عزل شد.")
-        await _log_admin_action(
-            context, chat_id, f"⬇️ Demote\n👤 {name}\n🧑‍💼 توسط: {update.effective_user.first_name}"
+        asyncio.create_task(
+            _log_admin_action(context, chat_id, f"⬇️ Demote\n👤 {name}\n🧑‍💼 توسط: {update.effective_user.first_name}")
         )
     except Exception as e:
         logger.warning(f"عزل ناموفق بود: {e}")
         await update.effective_message.reply_text("عزل انجام نشد.")
+
+
+def _parse_settag_target(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """آیدی هدف + «تگ» جدید رو از ریپلای یا آرگومان اول (آیدی عددی/@username) در
+    میاره - از context.args می‌خونه (نه از خودِ متنِ پیام)، چون برخلاف promote/demote
+    اینجا هم با دستور تک‌کلمه‌ای (‎/settag) و هم با عبارتِ فارسیِ دوکلمه‌ای («تنظیم
+    تگ») صدا زده می‌شه؛ context.args همیشه (توسط PTB یا دیسپچر عبارت‌های فارسی)
+    درست، یعنی بدون خودِ کلمه‌ی محرک، پر شده."""
+    message = update.effective_message
+    args = context.args or []
+    if message.reply_to_message and message.reply_to_message.from_user:
+        u = message.reply_to_message.from_user
+        tag = " ".join(args) or None
+        return u.id, (u.first_name or u.username or str(u.id)), tag
+    if args and args[0].isdigit():
+        target_id = int(args[0])
+        return target_id, _user_display_names.get(target_id, args[0]), (" ".join(args[1:]) or None)
+    if args and args[0].startswith("@"):
+        uname = args[0][1:].lower()
+        target_id = _username_to_id.get(uname)
+        if target_id is not None:
+            return target_id, _user_display_names.get(target_id, args[0]), (" ".join(args[1:]) or None)
+    return None, None, None
+
+
+async def settag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """‎/settag یا «تنظیم تگ <متن جدید>» - تگِ ادمینیِ تلگرامیِ طرف (همونی که زیرِ
+    اسمش توی لیستِ اعضای گروه دیده می‌شه) رو عوض می‌کنه، بدون نیاز به دوباره
+    ادمین‌کردنش. این با ‎/setlqab فرق داره: ‎/setlqab لقبِ نمایشیِ داخلیِ خودِ ربات
+    (توی ‎/profile) رو برای خودِ شخص عوض می‌کنه؛ این یکی، تگِ واقعیِ تلگرام رو برای
+    یه ادمینِ دیگه (با ریپلای یا آیدی) تنظیم می‌کنه - کاری که فقط ادمین‌های مجاز
+    (manage_admins) می‌تونن انجام بدن.
+
+    ⚠️ محدودیتِ خودِ تلگرام: این فقط برای ادمین‌هایی کار می‌کنه که خودِ همین ربات
+    پروموتشون کرده (یعنی قبلاً با ‎/promote ادمین شدن)؛ برای ادمین‌هایی که مالکِ
+    گروه دستی ادمینشون کرده، تلگرام اجازه‌ی تغییر تگ رو به هیچ رباتی نمی‌ده."""
+    if not has_permission(update.effective_user.id, "manage_admins"):
+        await update.effective_message.reply_text("این دستور فقط برای ادمین‌های مجازه.")
+        return
+    chat_id = update.effective_chat.id
+    target_id, name, new_tag = _parse_settag_target(update, context)
+    if target_id is None or not new_tag:
+        await update.effective_message.reply_text(
+            "استفاده (یکی از این دو روش):\n"
+            "• روی پیامِ ادمینِ موردنظر ریپلای بزن و بنویس ‎/settag <تگِ جدید>\n"
+            "• ‎/settag <آیدی عددی/@username> <تگِ جدید>\n"
+            "مثال: ‎/settag 123456789 مدیر ارشد\n\n"
+            "ℹ️ این فقط تگِ ادمینیِ تلگرامی (زیرِ اسمش توی لیستِ اعضا) رو عوض می‌کنه. "
+            "برای لقبِ پروفایلِ خودت (توی ‎/profile) از ‎/setlqab استفاده کن."
+        )
+        return
+    title_text, title_ok = await _apply_admin_custom_title(context, chat_id, target_id, new_tag)
+    if title_ok and title_text:
+        await update.effective_message.reply_text(f"🏷 تگِ ادمینیِ {name} روی «{title_text}» تنظیم شد.")
+        asyncio.create_task(
+            _log_admin_action(
+                context, chat_id,
+                f"🏷 Set Admin Tag\n👤 {name}\n🏷 {title_text}\n🧑‍💼 توسط: {update.effective_user.first_name}",
+            )
+        )
+    else:
+        await update.effective_message.reply_text(
+            "❌ تگ تنظیم نشد. یکی از این دلیل‌هاست:\n"
+            "• طرف اصلاً ادمینِ این گروه نیست، یا ادمینیش رو خودِ همین ربات نداده "
+            "(تلگرام فقط اجازه‌ی تغییرِ تگِ ادمین‌هایی که خودِ ربات پروموت کرده رو می‌ده؛ "
+            "برای ادمین‌های دستیِ خودِ گروه این امکان از سمتِ تلگرام بسته‌ست)\n"
+            "• تگ بیشتر از ۱۶ کاراکتره یا ایموجی توشه"
+        )
 
 
 # ---------- پاک‌سازی پیام‌ها ----------
@@ -5165,36 +5234,37 @@ async def _execute_pending_panel_action(update: Update, context: ContextTypes.DE
             await _reply("این اکشن فقط برای ادمین‌های مجازه.")
             return
         title = rest or None
-        try:
-            bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
-            if getattr(bot_member, "can_promote_members", False) is not True:
-                await _reply(
-                    "ربات دسترسی «Add New Admins» رو توی این گروه نداره؛ اول اونو فعال کن."
-                )
-                return
-        except Exception as e:
-            logger.warning(f"چک دسترسی ربات ناموفق بود: {e}")
+        # ⚡️ سرعت: دیگه قبلش get_chat_member جدا برای چک دسترسی ربات نمی‌زنیم
+        # (یه رفت‌وبرگشت اضافه‌ی کامل به سرور تلگرام بود)؛ مستقیم امتحان می‌کنیم و
+        # اگه ربات دسترسی نداشته باشه، خودِ خطای promote_chat_member تشخیص داده می‌شه.
         try:
             await context.bot.promote_chat_member(
                 chat_id=chat_id, user_id=target_id,
                 can_delete_messages=True, can_restrict_members=True, can_invite_users=True,
                 can_pin_messages=True, can_manage_chat=True, can_promote_members=True,
             )
-            title_text, title_ok = await _apply_admin_custom_title(context, chat_id, target_id, title)
-            text = f"👑 {name} ادمین گروه شد."
-            if title:
-                if title_ok and title_text:
-                    text += f" (لقب: {title_text})"
-                else:
-                    text += (
-                        " ⚠️ ولی لقب تنظیم نشد (حداکثر ۱۶ کاراکتر، بدون ایموجی - "
-                        "دوباره امتحان کن)."
-                    )
-            await _reply(text)
-            await _log_admin_action(context, chat_id, f"👑 Promote (از پنل)\n👤 {name}\n🧑‍💼 توسط: {user.first_name}")
         except Exception as e:
             logger.warning(f"ارتقا ناموفق بود: {e}")
-            await _reply(f"ارتقا انجام نشد. خطای تلگرام: {e}")
+            err = str(e).lower()
+            if "not enough rights" in err or "chat_admin_required" in err:
+                await _reply("ربات دسترسی «Add New Admins» رو توی این گروه نداره؛ اول اونو فعال کن.")
+            else:
+                await _reply(f"ارتقا انجام نشد. خطای تلگرام: {e}")
+            return
+        title_text, title_ok = await _apply_admin_custom_title(context, chat_id, target_id, title)
+        text = f"👑 {name} ادمین گروه شد."
+        if title:
+            if title_ok and title_text:
+                text += f" (لقب: {title_text})"
+            else:
+                text += (
+                    " ⚠️ ولی لقب تنظیم نشد (حداکثر ۱۶ کاراکتر، بدون ایموجی - "
+                    "دوباره امتحان کن)."
+                )
+        await _reply(text)
+        asyncio.create_task(
+            _log_admin_action(context, chat_id, f"👑 Promote (از پنل)\n👤 {name}\n🧑‍💼 توسط: {user.first_name}")
+        )
 
     elif action == "demote":
         if not has_permission(user.id, "manage_admins"):
@@ -5207,7 +5277,9 @@ async def _execute_pending_panel_action(update: Update, context: ContextTypes.DE
                 can_pin_messages=False, can_manage_chat=False,
             )
             await _reply(f"{name} از ادمینی عزل شد.")
-            await _log_admin_action(context, chat_id, f"⬇️ Demote (از پنل)\n👤 {name}\n🧑‍💼 توسط: {user.first_name}")
+            asyncio.create_task(
+                _log_admin_action(context, chat_id, f"⬇️ Demote (از پنل)\n👤 {name}\n🧑‍💼 توسط: {user.first_name}")
+            )
         except Exception as e:
             logger.warning(f"عزل ناموفق بود: {e}")
             await _reply("عزل انجام نشد.")
@@ -5544,6 +5616,7 @@ HELP_SECTIONS = {
         "┏━━━『 👑 ادمین‌ها 』━━━┓\n"
         "┃ ‎/promote «ارتقا» <آیدی یا ریپلای> [لقب]\n"
         "┃ ‎/demote «عزل» <آیدی یا ریپلای>\n"
+        "┃ ‎/settag «تنظیم تگ» <آیدی یا ریپلای> <تگ> - فقط تگِ ادمینِ موجود رو عوض می‌کنه\n"
         "┗━━━━━━━━━━━━━━━━━━━━┛"),
     "group": ("🧹 گروه", True,
         "┏━━━『 🧹 گروه 』━━━┓\n"
@@ -7838,6 +7911,8 @@ PERSIAN_COMMAND_ALIASES = {
     "ان بن": unban_command,
     "ارتقا": promote_command,
     "عزل": demote_command,
+    "تنظیم تگ": settag_command,
+    "تگ ادمین": settag_command,
     "پاکسازی": purge_command,
     "پاکسازی کاربر": purgeuser_command,
     "پیش‌نمایش پاکسازی": purge_preview_command,
@@ -7885,6 +7960,14 @@ PERSIAN_COMMAND_ALIASES = {
     "پنل مدیریت": menu_command,
     "پنل من": panel_command,
     "پنل ادمین": adminpanel_command,
+    "پنل مالک": owner_panel.ownerpanel_command,
+    "ورود ادمین": owner_panel.adminlogin_command,
+    "تایید ادمین": owner_panel.claimadmin_command,
+
+    # روشن/خاموش خوشامدگویی و پیام ترک (قبلاً فقط توی راهنما نوشته شده بود که
+    # این دوتا معادل فارسی دارن، ولی واقعاً ثبت نشده بودن - الان درستن)
+    "خوشامد": welcome_toggle_command,
+    "ترک": leave_toggle_command,
 
     # فعالیت اضافی
     "فیلتر فعالیت": activity_filter_command,
@@ -8239,6 +8322,7 @@ def main():
     app.add_handler(CommandHandler("unban", unban_command))
     app.add_handler(CommandHandler("promote", promote_command))
     app.add_handler(CommandHandler("demote", demote_command))
+    app.add_handler(CommandHandler("settag", settag_command))
     app.add_handler(CommandHandler("purge", purge_command))
     app.add_handler(CommandHandler("purgeuser", purgeuser_command))
     app.add_handler(CommandHandler("purgestats", purgestats_command))
@@ -8498,9 +8582,13 @@ def main():
     app.add_handler(CommandHandler("seteco", seteco_command))
     app.add_handler(CommandHandler("setshopprice", setshopprice_command))
 
-    # پنل شخصی پیوی برای کاربر عادی + میانبر پنل مدیریت از پیوی
+    # پنل شخصی پیوی برای کاربر عادی
     app.add_handler(CommandHandler("panel", panel_command))
-    app.add_handler(CommandHandler("adminpanel", adminpanel_command))
+    # 🐛 رفع‌شده: دستور «/adminpanel» قبلاً دوبار ثبت شده بود - یه بار اینجا (میانبر
+    # /menu) و یه بار بالاتر برای owner_panel.ownerpanel_command. چون تلگرام/PTB فقط
+    # اولین هندلرِ ثبت‌شده برای یه دستور رو اجرا می‌کنه، این خط هیچ‌وقت واقعاً اجرا
+    # نمی‌شد (کدِ مرده بود) و /adminpanel همیشه پنلِ مالک رو باز می‌کرد، نه منو. حذف
+    # شد تا دوباره‌کاری/ابهام نباشه؛ میانبرِ منو همچنان با نوشتن «پنل ادمین» کار می‌کنه.
 
     # نظرسنجی و قرعه‌کشی
     app.add_handler(CommandHandler("poll", poll_command))
