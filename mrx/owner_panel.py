@@ -122,7 +122,35 @@ def _hash(secret: str) -> str:
 
 
 def _norm(u: str) -> str:
-    return (u or "").strip().lstrip("@").lower()
+    """کلید داخلیِ تطبیق: بدون فاصله‌های نامرئی، بدون @ ابتدا/انتها، حروف کوچک.
+    این فقط برای *مقایسه* استفاده می‌شه؛ چیزی که مالک/طرف واقعاً تایپ کرده
+    جدا (به‌صورت اصلی، بدون تغییر) نگه داشته و نمایش داده می‌شه - همون چیزی
+    که کاربر وارد کرده، نه نسخه‌ی نرمال‌شده."""
+    u = (u or "").strip()
+    # کاراکترهای نامرئی/جهت‌ساز (zero-width، RTL/LTR mark و ...) که گاهی موقع
+    # کپی/پیست از کیبورد فارسی قاطی متن می‌شن و باعث میشن یوزرنیم «یکی نباشه»
+    # با اینکه ظاهرش عین همه؛ قبل از هر مقایسه‌ای حذف می‌شن.
+    for ch in ("‌", "​", "‎", "‏", "‪", "‫", "‬"):
+        u = u.replace(ch, "")
+    return u.strip().strip("@").lower()
+
+
+def _display_form(u: str) -> str:
+    """نسخه‌ی «همونی که تایپ شده» برای نمایش - کاراکترهای نامرئی و @ ابتدا/انتها
+    حذف می‌شه، ولی برخلاف _norm حروف کوچیک/بزرگ دست‌نخورده می‌مونه. یعنی اگه
+    مالک MRXADMIN بزنه، همه‌جا دقیقاً MRXADMIN نشون داده می‌شه - نه mrxadmin."""
+    u = (u or "").strip()
+    for ch in ("‌", "​", "‎", "‏", "‪", "‫", "‬"):
+        u = u.replace(ch, "")
+    return u.strip().strip("@")
+
+
+def _mono(u: str) -> str:
+    """یوزرنیم رو توی بک‌تیک (مونواسپیس) نشون می‌ده تا توی متنِ فارسیِ راست‌به‌چپ
+    گم/معکوس نشه (تلگرام متن مونواسپیس رو همیشه چپ‌به‌راست رندر می‌کنه). بدون
+    این، چیزی مثل «@mrxadmin» وسط یه جمله‌ی فارسی ممکنه ظاهراً برعکس
+    («mrxadmin@») دیده بشه، با اینکه مقدار واقعیِ ذخیره‌شده درست و دست‌نخورده‌ست."""
+    return f"`{u}`"
 
 
 def _valid_login_token(s: str, min_len: int) -> bool:
@@ -167,6 +195,14 @@ def list_admins() -> list[tuple[int, dict]]:
 
 def _perm_txt(perms) -> str:
     return "، ".join(SHORT_LABELS.get(p, p) for p in perms) or "—"
+
+
+def _rec_label(rec: dict) -> str:
+    """لیبلِ نمایشیِ یوزرنیم یه رکورد (ادمین پویا یا دعوت) - دقیقاً همون چیزی که
+    موقع ساخت تایپ شده (نه نسخه‌ی لوورکیسِ نرمال‌شده)، با فرمت مونواسپیس تا
+    توی متن فارسی معکوس/قاطی نشه. رکوردهای قدیمی‌تر که هنوز username_display
+    ندارن (از قبل این آپدیت)، با همون username نرمال‌شده نشون داده می‌شن."""
+    return _mono(rec.get("username_display") or rec.get("username", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +329,8 @@ async def _try_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, usernam
         await message.reply_text("❌ یوزرنیم/رمز درست نیست یا این دعوت قبلاً استفاده/لغو شده.")
         return
 
+    display = invite.get("username_display") or uname
+
     if invite["expires"] < time.time():
         _pending_invites.pop(uname, None)
         _audit(invite["created_by"], "CLAIM_EXPIRED", note=f"@{uname}")
@@ -308,7 +346,7 @@ async def _try_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, usernam
             await message.reply_text("❌ رمز اشتباهه. تعداد تلاش‌های مجاز تموم شد؛ این دعوت باطل شد.")
             await _notify_owner(
                 context, invite["created_by"],
-                f"⚠️ دعوت @{uname} بعد از {_MAX_CLAIM_ATTEMPTS} تلاش ناموفق خودکار باطل شد."
+                f"⚠️ دعوت {_mono(display)} بعد از {_MAX_CLAIM_ATTEMPTS} تلاش ناموفق خودکار باطل شد."
             )
         else:
             left = _MAX_CLAIM_ATTEMPTS - invite["attempts"]
@@ -319,6 +357,7 @@ async def _try_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, usernam
     perms = list(invite["permissions"])
     _dynamic_admins[user.id] = {
         "username": uname,
+        "username_display": display,
         "permissions": perms,
         "added_by": invite["created_by"],
         "added_at": time.time(),
@@ -334,7 +373,7 @@ async def _try_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, usernam
     tg_tag = f" (@{user.username})" if user.username else ""
     await _notify_owner(
         context, invite["created_by"],
-        f"✅ @{uname} با موفقیت ادمین شد — آیدی {user.id}{tg_tag}.\n🔑 دسترسی‌ها: {_perm_txt(perms)}"
+        f"✅ {_mono(display)} با موفقیت ادمین شد — آیدی {user.id}{tg_tag}.\n🔑 دسترسی‌ها: {_perm_txt(perms)}"
     )
 
 
@@ -373,15 +412,16 @@ def _admins_text() -> str:
     lines = ["👑 ادمین‌های پویا:", ""]
     for uid, rec in list_admins():
         when = time.strftime("%Y-%m-%d", time.localtime(rec["added_at"]))
-        lines.append(f"• @{rec['username']} ({uid}) — از {when}\n  دسترسی: {_perm_txt(rec['permissions'])}")
+        lines.append(f"• {_rec_label(rec)} ({uid}) — از {when}\n  دسترسی: {_perm_txt(rec['permissions'])}")
     return "\n".join(lines)
 
 
 def _admins_markup() -> InlineKeyboardMarkup:
     rows = []
     for uid, rec in list_admins():
+        btn_label = rec.get("username_display") or rec.get("username", "")
         rows.append([
-            InlineKeyboardButton(f"✏️ @{rec['username']}", callback_data=f"op:perm:{uid}"),
+            InlineKeyboardButton(f"✏️ {btn_label}", callback_data=f"op:perm:{uid}"),
             InlineKeyboardButton("🗑 عزل", callback_data=f"op:revoke:{uid}"),
         ])
     rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="op:home")])
@@ -394,14 +434,15 @@ def _pending_text() -> str:
     lines = ["🧾 دعوت‌های در انتظار تایید:", ""]
     for uname, inv in _pending_invites.items():
         exp = time.strftime("%Y-%m-%d %H:%M", time.localtime(inv["expires"]))
-        lines.append(f"• @{uname} — تا {exp}\n  دسترسی: {_perm_txt(inv['permissions'])}")
+        lines.append(f"• {_rec_label(inv)} — تا {exp}\n  دسترسی: {_perm_txt(inv['permissions'])}")
     return "\n".join(lines)
 
 
 def _pending_markup() -> InlineKeyboardMarkup:
     rows = []
-    for uname in _pending_invites:
-        rows.append([InlineKeyboardButton(f"🗑 لغو دعوت @{uname}", callback_data=f"op:pcancel:{uname}")])
+    for uname, inv in _pending_invites.items():
+        btn_label = inv.get("username_display") or uname
+        rows.append([InlineKeyboardButton(f"🗑 لغو دعوت {btn_label}", callback_data=f"op:pcancel:{uname}")])
     rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="op:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -491,7 +532,7 @@ async def panel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         _owner_text_wait.pop(user.id, None)
         await query.edit_message_text(
             f"🎲 رمز تصادفی ساخته شد: `{password}`\n(این رمز رو جایی یادداشت کن؛ آخرش دوباره نشونت می‌دیم.)\n\n"
-            f"حالا دسترسی‌های ادمین جدید (@{wiz['username']}) رو انتخاب کن:",
+            f"حالا دسترسی‌های ادمین جدید ({_mono(wiz.get('username_display', wiz['username']))}) رو انتخاب کن:",
             parse_mode="Markdown",
             reply_markup=_permission_markup(set(), "new", "✅ تایید و ساخت دعوت", "op:geninvite", "op:add"),
         )
@@ -529,15 +570,16 @@ async def panel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         if token == "new":
             wiz["permissions"] = selected
+            uname_label = _mono(wiz.get("username_display") or wiz.get("username", "?"))
             await query.edit_message_text(
-                f"دسترسی‌های ادمین جدید (@{wiz.get('username', '?')}) رو انتخاب کن:",
+                f"دسترسی‌های ادمین جدید ({uname_label}) رو انتخاب کن:",
                 reply_markup=_permission_markup(selected, "new", "✅ تایید و ساخت دعوت", "op:geninvite", "op:add"),
             )
         else:
             _dynamic_admins[target_id]["permissions"] = list(selected)
             await save_state()
             rec = _dynamic_admins[target_id]
-            label = f"@{rec['username']}"
+            label = _rec_label(rec)
             await query.edit_message_text(
                 f"دسترسی‌های {label} رو تنظیم کن (هر تغییر بلافاصله ذخیره می‌شه):",
                 reply_markup=_permission_markup(selected, str(target_id), "✅ پایان ویرایش", "op:list", "op:list"),
@@ -554,6 +596,7 @@ async def panel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         uname, password = wiz["username"], wiz["password"]
+        display = wiz.get("username_display") or uname
         _pending_invites[uname] = {
             "password_hash": _hash(password),
             "permissions": list(wiz["permissions"]),
@@ -561,6 +604,7 @@ async def panel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             "created_at": time.time(),
             "expires": time.time() + _INVITE_TTL_SECONDS,
             "attempts": 0,
+            "username_display": display,
         }
         _audit(user.id, "INVITE_CREATED", note=f"@{uname}")
         await save_state()
@@ -573,8 +617,10 @@ async def panel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             "🔐 ادمین ربات شدی!\n"
             f"۱) برو پیوی ربات: @{context.bot.username}\n"
             "۲) بزن: /adminlogin\n"
-            f"۳) یوزرنیم: `{uname}`\n"
+            f"۳) یوزرنیم: `{display}`\n"
             f"۴) رمز: `{password}`\n\n"
+            "⚠️ یوزرنیم و رمز رو دقیقاً همونجوری که اینجا نوشته شده (حروف کوچیک/بزرگ "
+            "فرقی نداره، ولی فاصله یا کاراکتر اضافه نذار) کپی/تایپ کن.\n\n"
             "—（اطلاعات پنل، فقط برای خودت）—\n"
             f"⏳ اعتبار دعوت: {hours} ساعت (حداکثر {_MAX_CLAIM_ATTEMPTS} تلاش اشتباه)\n"
             f"🔓 دسترسی‌ها: {perm_txt}",
@@ -591,7 +637,7 @@ async def panel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text(_admins_text(), reply_markup=_admins_markup())
             return
         await query.edit_message_text(
-            f"دسترسی‌های @{rec['username']} رو تنظیم کن (هر تغییر بلافاصله ذخیره می‌شه):",
+            f"دسترسی‌های {_rec_label(rec)} رو تنظیم کن (هر تغییر بلافاصله ذخیره می‌شه):",
             reply_markup=_permission_markup(set(rec["permissions"]), str(target_id), "✅ پایان ویرایش", "op:list", "op:list"),
         )
         return
@@ -603,7 +649,7 @@ async def panel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text(_admins_text(), reply_markup=_admins_markup())
             return
         await query.edit_message_text(
-            f"⚠️ مطمئنی @{rec['username']} عزل بشه؟ دسترسی‌هاش فوراً قطع می‌شه.",
+            f"⚠️ مطمئنی {_rec_label(rec)} عزل بشه؟ دسترسی‌هاش فوراً قطع می‌شه.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("✅ بله، عزل کن", callback_data=f"op:revokeyes:{target_id}"),
                 InlineKeyboardButton("❌ نه", callback_data="op:list"),
@@ -642,7 +688,9 @@ async def text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             text = (message.text or "").strip()
             if not text:
                 return
-            uname = _norm(text.split()[0])
+            raw = text.split()[0]
+            uname = _norm(raw)          # کلید داخلی (برای تطبیق/ذخیره‌سازی)
+            display = _display_form(raw)  # دقیقاً همونی که مالک تایپ کرد (برای نمایش)
             if not _valid_login_token(uname, _MIN_USERNAME_LEN) or not all(c.isalnum() or c == "_" for c in uname):
                 await message.reply_text(
                     f"❌ یوزرنیم نامعتبره. دوباره بفرست (فقط حروف/عدد/زیرخط، حداقل {_MIN_USERNAME_LEN} کاراکتر، بدون فاصله)."
@@ -655,10 +703,10 @@ async def text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await message.reply_text("⚠️ برای این یوزرنیم یه دعوتِ در انتظارِ تایید از قبل وجود داره («🧾 دعوت‌های در انتظار»).")
                 return
 
-            _wizard[user.id] = {"stage": "password", "username": uname}
+            _wizard[user.id] = {"stage": "password", "username": uname, "username_display": display}
             _owner_text_wait[user.id] = {"type": "new_admin_password"}
             await message.reply_text(
-                f"✅ یوزرنیم: {uname}\n\n"
+                f"✅ یوزرنیم: {_mono(display)}\n\n"
                 f"حالا یه رمز دلخواه (حداقل {_MIN_PASSWORD_LEN} کاراکتر، بدون فاصله) بفرست، "
                 "یا بزن 🎲 برای ساختنِ خودکار یه رمز امن:",
                 reply_markup=InlineKeyboardMarkup([

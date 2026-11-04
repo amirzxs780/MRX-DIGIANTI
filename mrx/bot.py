@@ -2808,7 +2808,12 @@ async def _set_custom_title(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         await message.reply_text("لقب اختصاصیت حذف شد؛ از الان لقب خودکار سطحت نشون داده می‌شه.")
         await save_state()
         return
-    new_title = new_title.strip()
+    # کاراکترهای نامرئی (zero-width و جهت‌سازها) حذف می‌شن - وگرنه می‌شه با
+    # قایم‌کردنشون وسط یه کلمه‌ی ممنوعه (مثلاً «ادم‌ین») از فیلتر رد شد، چون
+    # ظاهراً همون کلمه دیده می‌شه ولی توی مقایسه‌ی متنی یکی نیست.
+    for ch in ("‌", "​", "‎", "‏", "‪", "‫", "‬"):
+        new_title = new_title.replace(ch, "")
+    new_title = " ".join(new_title.split())  # چندتا فاصله‌ی پشت‌سرهم → یکی
     if not new_title:
         await message.reply_text("استفاده: ‎/setlqab <لقب دلخواه>\nمثال: ‎/setlqab شاهزاده")
         return
@@ -4535,6 +4540,52 @@ async def setmodconfig_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ---------- ارتقا / عزل ادمین ----------
 
+# تلگرام برای «لقب ادمین» (set_chat_administrator_custom_title) ایموجی و بعضی
+# کاراکترهای خاص رو اصلاً قبول نمی‌کنه و با خطای CUSTOM_TITLE_INVALID رد می‌کنه؛
+# این الگو همون کاراکترها رو از قبل حذف می‌کنه تا لقب بی‌دلیل رد نشه.
+_ADMIN_TITLE_EMOJI_RE = re.compile(
+    "["
+    "\U0001F000-\U0001FFFF"
+    "\U00002600-\U000027BF"
+    "\U00002B00-\U00002BFF"
+    "\U00002190-\U000021FF"
+    "\U00002300-\U000023FF"
+    "️‍"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _sanitize_admin_custom_title(raw: str | None) -> str:
+    """لقبِ خام رو برای فرستادن به Telegram API آماده می‌کنه: فاصله‌های اضافه،
+    کاراکترهای نامرئی/جهت‌ساز و ایموجی حذف می‌شه و طول به ۱۶ کاراکتر (محدودیت
+    خودِ تلگرام برای custom_title) می‌رسه."""
+    if not raw:
+        return ""
+    t = raw.strip()
+    for ch in ("‌", "​", "‎", "‏", "‪", "‫", "‬"):
+        t = t.replace(ch, "")
+    t = _ADMIN_TITLE_EMOJI_RE.sub("", t)
+    return t.strip()[:16]
+
+
+async def _apply_admin_custom_title(context: ContextTypes.DEFAULT_TYPE, chat_id: int, target_id: int, raw_title: str | None) -> tuple[str, bool]:
+    """لقبِ ادمینِ تلگرامیِ طرف رو تنظیم می‌کنه و (لقبِ نهایی، موفق بود یا نه) رو
+    برمی‌گردونه - تا پیام به کاربر هیچ‌وقت «لقب ست شد» نگه درحالی‌که API ردش کرده.
+    اگه raw_title خالی/نامعتبر باشه، موفق=True و لقب='' (یعنی چیزی نخواستیم تنظیم کنیم)."""
+    title = _sanitize_admin_custom_title(raw_title)
+    if not title:
+        return "", True
+    try:
+        await context.bot.set_chat_administrator_custom_title(
+            chat_id=chat_id, user_id=target_id, custom_title=title
+        )
+        return title, True
+    except Exception as e:
+        logger.warning(f"تنظیم لقب ادمین ناموفق بود: {e}")
+        return title, False
+
+
 async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not has_permission(update.effective_user.id, "manage_admins"):
         await update.effective_message.reply_text("این دستور فقط برای ادمین‌های مجازه.")
@@ -4577,16 +4628,16 @@ async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             can_manage_chat=True,
             can_promote_members=True,
         )
-        if title:
-            try:
-                await context.bot.set_chat_administrator_custom_title(
-                    chat_id=chat_id, user_id=target_id, custom_title=title[:16]
-                )
-            except Exception as e:
-                logger.warning(f"تنظیم لقب ادمین ناموفق بود: {e}")
+        title_text, title_ok = await _apply_admin_custom_title(context, chat_id, target_id, title)
         text = f"👑 {name} ادمین گروه شد."
         if title:
-            text += f" (لقب: {title[:16]})"
+            if title_ok and title_text:
+                text += f" (لقب: {title_text})"
+            else:
+                text += (
+                    " ⚠️ ولی لقب تنظیم نشد (تلگرام لقبِ ادمین رو حداکثر ۱۶ کاراکتر قبول می‌کنه "
+                    "و ایموجی توش مجاز نیست؛ با ‎/promote دوباره یه لقبِ ساده‌تر امتحان کن)."
+                )
         await update.effective_message.reply_text(text)
         await _log_admin_action(
             context, chat_id, f"👑 Promote\n👤 {name}\n🧑‍💼 توسط: {update.effective_user.first_name}"
@@ -5113,7 +5164,7 @@ async def _execute_pending_panel_action(update: Update, context: ContextTypes.DE
         if not has_permission(user.id, "manage_admins"):
             await _reply("این اکشن فقط برای ادمین‌های مجازه.")
             return
-        title = rest[:16] if rest else None
+        title = rest or None
         try:
             bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
             if getattr(bot_member, "can_promote_members", False) is not True:
@@ -5129,16 +5180,16 @@ async def _execute_pending_panel_action(update: Update, context: ContextTypes.DE
                 can_delete_messages=True, can_restrict_members=True, can_invite_users=True,
                 can_pin_messages=True, can_manage_chat=True, can_promote_members=True,
             )
-            if title:
-                try:
-                    await context.bot.set_chat_administrator_custom_title(
-                        chat_id=chat_id, user_id=target_id, custom_title=title
-                    )
-                except Exception as e:
-                    logger.warning(f"تنظیم لقب ادمین ناموفق بود: {e}")
+            title_text, title_ok = await _apply_admin_custom_title(context, chat_id, target_id, title)
             text = f"👑 {name} ادمین گروه شد."
             if title:
-                text += f" (لقب: {title})"
+                if title_ok and title_text:
+                    text += f" (لقب: {title_text})"
+                else:
+                    text += (
+                        " ⚠️ ولی لقب تنظیم نشد (حداکثر ۱۶ کاراکتر، بدون ایموجی - "
+                        "دوباره امتحان کن)."
+                    )
             await _reply(text)
             await _log_admin_action(context, chat_id, f"👑 Promote (از پنل)\n👤 {name}\n🧑‍💼 توسط: {user.first_name}")
         except Exception as e:
