@@ -12,3 +12,5 @@ from collections import defaultdict
 _wallet = defaultdict(lambda: defaultdict(int))
 _xp = defaultdict(lambda: defaultdict(int))
 _achievements = defaultdict(lambda: defaultdict(set))
+# فاز ۲ V18 (economy_macro) - جمعیتِ شناخته‌شده‌ی هر گروه، برای شاخصِ بیکاری/جمعیت
+_known_members = defaultdict(set)

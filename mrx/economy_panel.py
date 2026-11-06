@@ -60,6 +60,7 @@ import economy_clothing
 import economy_theft
 import economy_achievements
 import economy_missions
+import economy_macro
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,7 @@ CATEGORIES: dict[str, dict] = {
         "items": [
             ("💎 ارزش خالص من", "act", "ach"),
             ("👑 جدول رتبه‌بندی‌ها", "sec", "lb"),
+            ("📊 اقتصاد کلان گروه", "sec", "macro"),
         ],
     },
 }
@@ -1187,6 +1189,16 @@ async def _cb_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE, ke
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 🌍 اقتصاد کلان گروه (فاز ۲ V18 — Living Economy Engine، فقط نمایشی/اطلاعاتی)
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_macro(chat_id: int, uid: int):
+    text = economy_macro.format_dashboard_text(chat_id)
+    rows = [_back_row("macro")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 🔀 جدول بخش‌ها
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1209,6 +1221,7 @@ _SECTION_RENDERERS = {
     "ug": _render_ug,
     "theft": _render_theft,
     "lb": _render_leaderboard,
+    "macro": _render_macro,
 }
 
 _SECTION_MODULE_KEY = {

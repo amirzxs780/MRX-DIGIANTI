@@ -2338,3 +2338,73 @@ ECONOMY_MENU_TEXT = """💰 اقتصاد DIGIANTI
 ├ 👑 رتبه‌ها — «ثروتمندان» / «برترین‌ها»
 └ 📊 آمار اقتصاد — «ارزش خالص» / «آمار اقتصاد» / «سلامت اقتصاد»"""
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🌍 DIGNANTI V18 — LIVING ECONOMY ENGINE (فاز ۲: عرضه/تقاضا + اقتصاد کلان)
+# شروعِ ارتقای V17 → V18 ULTIMATE ECONOMY. طبقِ قانونِ معماریِ پروژه، هیچ
+# ماژولِ جدیدی مستقیم wallet/bank رو دست نمی‌زنه؛ این بخش فقط config دو
+# ماژولِ جدید رو تعریف می‌کنه:
+#   • economy_supply  → قیمت‌گذاریِ پویایِ کالا بر اساسِ عرضه/تقاضای واقعی
+#   • economy_macro   → شاخص‌های کلانِ اقتصادِ گروه (GDP، تورمِ واقعی، بیکاری،
+#                        رونق/رکود) — همه از روی Ledger واقعیِ economy_core
+#                        محاسبه می‌شن، نه عددِ ساختگی.
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_SUPPLY_STATE_FILE = "economy_supply_state.json"
+
+# کلیدِ کالا -> نامِ فارسی، قیمتِ پایه/حداقل/حداکثر، حساسیتِ قیمت به فشارِ
+# تقاضا/عرضه. این کالاها پایه‌ی چرخه‌ی تولید/مصرفِ فازهای بعدی (کسب‌وکار/
+# کارخانه) هستن؛ هر ماژولی که بخواد قیمتِ واقعی/پویا داشته باشه از
+# economy_supply.record_demand / record_supply / get_price استفاده می‌کنه.
+COMMODITIES = {
+    "food":         {"name": "🍞 مواد غذایی",        "base_price": 40,  "min_price": 15,  "max_price": 160,  "demand_sensitivity": 0.015, "supply_sensitivity": 0.012},
+    "water":        {"name": "💧 آب",                "base_price": 10,  "min_price": 4,   "max_price": 40,   "demand_sensitivity": 0.012, "supply_sensitivity": 0.010},
+    "energy":       {"name": "⚡ انرژی",              "base_price": 60,  "min_price": 20,  "max_price": 300,  "demand_sensitivity": 0.020, "supply_sensitivity": 0.015},
+    "fuel":         {"name": "⛽ سوخت",               "base_price": 50,  "min_price": 18,  "max_price": 250,  "demand_sensitivity": 0.020, "supply_sensitivity": 0.015},
+    "raw_material": {"name": "🪨 مواد اولیه",         "base_price": 80,  "min_price": 25,  "max_price": 400,  "demand_sensitivity": 0.018, "supply_sensitivity": 0.015},
+    "steel":        {"name": "🔩 فولاد",              "base_price": 200, "min_price": 60,  "max_price": 1000, "demand_sensitivity": 0.016, "supply_sensitivity": 0.013},
+    "textile":      {"name": "🧵 نساجی",              "base_price": 70,  "min_price": 25,  "max_price": 350,  "demand_sensitivity": 0.014, "supply_sensitivity": 0.012},
+    "electronics":  {"name": "💻 قطعات الکترونیک",    "base_price": 500, "min_price": 150, "max_price": 2500, "demand_sensitivity": 0.022, "supply_sensitivity": 0.017},
+}
+
+COMMODITY_TICK_INTERVAL_SECONDS = 600         # هر Tick معادل ۱۰ دقیقه‌ی واقعی (الگوی Lazy Tick مثل بازار فاز ۳)
+COMMODITY_MAX_TICKS_PER_ACCESS = 50           # سقف تعداد Tickِ Lazy در یک دسترسی
+COMMODITY_PRESSURE_DECAY_PER_TICK = 0.90      # فشارِ تقاضا/عرضه‌ی قدیمی هر Tick ۱۰٪ فروکش می‌کنه
+COMMODITY_MAX_CHANGE_PER_TICK = 0.06          # حداکثر ۶٪ جابه‌جاییِ قیمت در هر Tick (ضدِ نوسانِ غیرمنطقی)
+COMMODITY_PRICE_HISTORY_LEN = 40
+COMMODITY_SHORTAGE_PRESSURE_THRESHOLD = 6.0   # فشارِ تقاضای خالصِ بالاتر از این = کمبودِ کالا
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🌍 ECONOMY MACRO ENGINE — شاخص‌های کلان (GDP، تورم، بیکاری، رونق/رکود)
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_MACRO_STATE_FILE = "economy_macro_state.json"
+
+MACRO_SNAPSHOT_INTERVAL_MINUTES = 60      # هر چند دقیقه‌ی واقعی یه Snapshot جدید (Lazy، نه Background Task)
+MACRO_MAX_SNAPSHOTS = 200                 # حداکثر تعدادِ Snapshotِ تاریخیِ هر گروه که نگه داشته می‌شه
+
+# این انواعِ تراکنش «تولید/درآمدِ واقعی» محسوب می‌شن و در GDP دوره‌ای جمع می‌شن.
+# نکته‌ی مهم: economy_core._source_totals با رشته‌ی خامِ kind= ایندکس می‌شه (همون
+# چیزی که هر ماژول موقعِ صدا زدنِ add_coins پاس می‌ده - مثلاً "work"/"salary"،
+# نه نوعِ نرمالایزشده‌ی بزرگ‌حرف)، پس این مجموعه هم باید دقیقاً همون رشته‌های
+# خام رو داشته باشه، نه TRANSACTION_TYPES نرمالایزشده‌ی economy_core.
+# عمداً چیزهایی که «تولیدِ واقعی» نیستن کنار گذاشته شدن: REWARD/mission_reward/
+# daily (صرفاً واریزِ جایزه، نه محصولِ تولیدشده)، شرط‌بندی/بازی/ترید (Zero-Sum،
+# نه تولید)، سرقت/جریمه/مالیات/وام/بیمه (بازتوزیع، نه تولید). این جداسازی خودِ
+# پایه‌ی سیگنالِ تورمِ economy_macro است: رشدِ عرضه‌ی پول (که REWARDها هم توش
+# حساب می‌شن) در مقابلِ رشدِ GDP واقعی (فقط همین لیست).
+MACRO_GDP_TRANSACTION_TYPES = {
+    "work",            # درآمدِ کار (economy_jobs.work_command)
+    "salary",          # حقوقِ دوره‌ای شغل (economy_jobs.salary_command)
+    "BUSINESS",        # سودِ خالصِ کسب‌وکار (economy_business)
+    "SALE",            # فروشِ محصولِ کسب‌وکار (economy_business)
+    "property_income", # درآمدِ اجاره‌ی ملک (economy_property)
+    "city_income",      # درآمدِ شهر/زیرساخت (economy_city)
+}
+
+# آستانه‌های رشدِ دوره‌ایِ GDP برای تشخیصِ رونق/رکود (درصدِ تغییر نسبت به Snapshot قبلی)
+MACRO_BOOM_GROWTH_THRESHOLD = 0.12        # رشدِ بالای ۱۲٪ در یک دوره = رونق
+MACRO_RECESSION_GROWTH_THRESHOLD = -0.08  # افتِ بیش از ۸٪ = رکود
+
+# نرخِ تورمِ هدف (برای شاخصِ اعتمادِ مصرف‌کننده - هرچی تورمِ واقعی ازش دورتر باشه، اعتماد کمتره)
+MACRO_TARGET_INFLATION_RATE = 0.02

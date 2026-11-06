@@ -88,6 +88,9 @@ import economy_underground
 import economy_achievements
 import economy_leaderboard
 import economy_events
+# فاز ۲ V18 — Living Economy Engine: عرضه/تقاضای کالا + شاخص‌های کلان
+import economy_supply
+import economy_macro
 import economy_shop2
 import economy_balance
 import economy_antiabuse
@@ -467,6 +470,8 @@ async def save_state():
         economy_blackmarket.save_state(),
         economy_underground.save_state(),
         economy_events.save_state(),
+        economy_supply.save_state(),
+        economy_macro.save_state(),
         poll_engine.save_state(),
         purge_engine.save_state(),
         owner_panel.save_state(),
@@ -506,6 +511,8 @@ def load_state():
     economy_blackmarket.load_state()
     economy_underground.load_state()
     economy_events.load_state()
+    economy_supply.load_state()
+    economy_macro.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
     owner_panel.load_state()
