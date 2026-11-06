@@ -135,10 +135,18 @@ async def record_progress(chat_id: int, uid: int, action: str, amount: int = 1) 
                         except Exception as e:
                             logger.warning(f"اعمال Mission Boost ناموفق بود: {e}")
                         try:
+                            # فیکس Phase 3: idempotency_key پایدار (شامل period_key، پس هر
+                            # نمونه‌ی جدیدِ همین Template توی بازه‌ی بعدی کلید جدا می‌گیره)
+                            # تا اگه به هر دلیلی (کرش وسط، بازیابی از بکاپ قدیمی‌تر،...)
+                            # record_progress دوباره برای همین ماموریتِ already-claimed
+                            # اجرا بشه، جایزه‌ش دوباره واریز نشه.
                             await economy_core.add_coins(
                                 chat_id, uid, coins, kind="mission_reward",
                                 note=f"ماموریت: {m['text']}",
+                                idempotency_key=f"mission_reward:{chat_id}:{uid}:{period}:{record['period_key']}:{m['key']}",
                             )
+                        except economy_core.DuplicateTransactionError:
+                            logger.warning(f"جایزه‌ی تکراری mission_reward برای {m['key']} ({chat_id}/{uid}) نادیده گرفته شد.")
                         except Exception as e:
                             logger.warning(f"واریز جایزه‌ی ماموریت ناموفق بود: {e}")
                     completed_texts.append(
@@ -219,6 +227,8 @@ def _write_state_file(data: dict):
             logger.warning(f"بکاپ گرفتن از state ناموفق بود: {e}")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, STATE_FILE)
 
 

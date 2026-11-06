@@ -655,6 +655,17 @@ def load_state():
 
     for cid, coins in data.get("wallet", {}).items():
         _wallet[int(cid)] = defaultdict(int, {int(u): c for u, c in coins.items()})
+
+    # فیکس (آدیتِ دوم - مسئله‌ی ۳ - هماهنگیِ Wallet/Ledger حینِ کرش): این باید
+    # دقیقاً همین‌جا صدا زده بشه - درست بعد از اینکه _wallet بالا از فایلِ
+    # خودِ bot.py پر شد، و بعد از اینکه economy_core.load_state() (چند خط
+    # بالاتر، خط ۴۸۸) Ledger/Idempotency Index خودشو از فایلِ جداگانه‌ش
+    # بارگذاری کرد. جزییاتِ کامل: economy_core.reconcile_wallet_journal().
+    try:
+        economy_core.reconcile_wallet_journal()
+    except Exception as e:
+        logger.warning(f"Wallet Journal Reconciliation ناموفق بود: {e}")
+
     for cid, times in data.get("last_daily", {}).items():
         _last_daily[int(cid)] = {int(u): t for u, t in times.items()}
     for cid, inner in data.get("owned_badges", {}).items():
@@ -3165,8 +3176,23 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reward = random.randint(min(es["daily_min"], es["daily_max"]), max(es["daily_min"], es["daily_max"]))
     bonus = economy_engine.daily_streak_bonus(chat.id, user.id)  # فاز ۲: جایزه‌ی اضافه بر اساس Streak پیاپی
     total_reward = reward + bonus
-    await economy_core.add_coins(chat.id, user.id, total_reward, kind="REWARD",
-                                  note=f"daily +{bonus} جایزه‌ی Streak" if bonus else "daily")
+    # فیکس Phase 3 (Daily rewards): idempotency_key بر اساس تاریخ تقویمی (UTC).
+    # بدون این، اگه درست بعد از add_coins (که موفق شده) و قبل از اینکه
+    # _last_daily[...] = now روی دیسک Persist بشه کرش کنیم، بعد از ری‌استارت
+    # _last_daily به مقدار قدیمی برمی‌گرده و کاربر می‌تونه فوراً دوباره /daily
+    # بزنه و همون روز رو دوبار جایزه بگیره؛ idempotency_key این سوءاستفاده رو
+    # می‌بنده چون خودِ رکورد Ledger (نه فقط _last_daily) جلوی تکرار رو می‌گیره.
+    daily_key = f"daily_reward:{chat.id}:{user.id}:{time.strftime('%Y-%m-%d', time.gmtime(now))}"
+    try:
+        await economy_core.add_coins(chat.id, user.id, total_reward, kind="REWARD",
+                                      note=f"daily +{bonus} جایزه‌ی Streak" if bonus else "daily",
+                                      idempotency_key=daily_key)
+    except economy_core.DuplicateTransactionError:
+        await update.effective_message.reply_text(
+            "جایزه‌ی روزانه‌ی امروز رو قبلاً گرفتی."
+        )
+        _last_daily[chat.id][user.id] = now
+        return
     _last_daily[chat.id][user.id] = now
     bonus_line = f"\n🔥 جایزه‌ی Streak: +{bonus} {config.CURRENCY_EMOJI}" if bonus else ""
     await update.effective_message.reply_text(
@@ -3724,7 +3750,7 @@ async def poll_vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer("این نظرسنجی دیگه در دسترس نیست.")
         return
     is_new_vote = query.from_user.id not in poll["votes"]
-    answer_text = poll_engine.record_vote(poll, query.from_user.id, idx)  # فاز ۳: تک/چندتایی + جایزه، همه‌جا از این‌جا
+    answer_text = poll_engine.record_vote(poll, query.from_user.id, idx, poll_id)  # فاز ۳: تک/چندتایی + جایزه، همه‌جا از این‌جا
     if is_new_vote:
         profile_engine.on_poll_voted(poll["chat_id"], query.from_user.id)
     await query.answer(answer_text)
@@ -6543,8 +6569,19 @@ async def _handle_econ_admin_callback(query, chat_id: int, data: str):
 
         if action in bonus_amounts:
             amount = bonus_amounts[action]
+            # فیکس Phase 3/6 (Administrative rewards + Repeated callbacks): تلگرام
+            # می‌تونه همین callback_query (تاییدِ «بله، بده») رو دوباره Deliver کنه
+            # (Retry شبکه/دابل‌تپ) و بدون این فیکس، کل اعضا دوباره جایزه می‌گرفتن.
+            # query.id شناسه‌ی یکتای همون Tap واقعیه (نه کل Feature) — یه Tap جدید
+            # (مثلاً ادمین دوباره عمداً «بله، بده» بزنه) query.id جدید داره و مجازه.
             for uid in members:
-                await economy_core.add_coins(chat_id, uid, amount, kind="EVENT", note="econquick bonus")
+                try:
+                    await economy_core.add_coins(
+                        chat_id, uid, amount, kind="EVENT", note="econquick bonus",
+                        idempotency_key=f"econquick_bonus:{chat_id}:{query.id}:{uid}",
+                    )
+                except economy_core.DuplicateTransactionError:
+                    pass
             await query.answer(f"✅ به {len(members)} نفر، {amount} {config.CURRENCY_NAME} داده شد.", show_alert=True)
             await save_state()
             await query.edit_message_text(_econ_admin_header(chat_id, "quick"), reply_markup=_build_econ_quick_markup(chat_id))

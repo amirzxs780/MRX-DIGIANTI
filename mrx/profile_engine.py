@@ -422,6 +422,8 @@ def _write_state_file(data: dict):
             logger.warning(f"بکاپ گرفتن از state ناموفق بود: {e}")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, STATE_FILE)
 
 
@@ -500,9 +502,20 @@ def load_state():
 
 def grant_rewards_for_unlocked(chat_id: int, uid: int, unlocked_keys: list) -> tuple[int, int]:
     """برای دستاوردهای تازه‌آزادشده، طبق config.ACHIEVEMENT_REWARDS، XP/Coin جایزه می‌ده.
-    برمی‌گردونه (مجموع xp اضافه‌شده, مجموع coin اضافه‌شده)."""
+    برمی‌گردونه (مجموع xp اضافه‌شده, مجموع coin اضافه‌شده).
+
+    فیکس معماری Economy Core: قبلاً اینجا مستقیم host._wallet[...] += coin_gain
+    انجام می‌شد — بدون Ledger، بدون Idempotency Key، بدون چک فریز اقتصاد.
+    الان از economy_core.add_coins_sync عبور می‌کنه (نسخه‌ی Sync چون این تابع
+    و ~۲۰ فراخوان‌کننده‌ش توی economy_achievements.check_all همه sync‌ان؛
+    تبدیل زنجیره‌ایِ همه‌شون به async خارج از اسکوپ یه فیکس تدریجیه — توضیح
+    کامل ایمنیِ Race Condition توی economy_core.add_coins_sync هست) با
+    idempotency_key = achievement:{chat_id}:{uid}:{key}. دوبار اجرا شدنِ این
+    تابع با همون کلید (مثلاً به‌خاطر باگ دیگه‌ای توی _unlock) دیگه دوبار پول
+    نمی‌ده."""
     if not unlocked_keys:
         return 0, 0
+    import economy_core
     host = _host()
     rewards = getattr(config, "ACHIEVEMENT_REWARDS", {})
     total_xp = total_coins = 0
@@ -516,8 +529,19 @@ def grant_rewards_for_unlocked(chat_id: int, uid: int, unlocked_keys: list) -> t
             host._xp[chat_id][uid] += xp_gain
             total_xp += xp_gain
         if coin_gain:
-            host._wallet[chat_id][uid] += coin_gain
-            total_coins += coin_gain
+            try:
+                economy_core.add_coins_sync(
+                    chat_id, uid, coin_gain, kind="REWARD",
+                    note=f"achievement:{key}",
+                    idempotency_key=f"achievement:{chat_id}:{uid}:{key}",
+                )
+                total_coins += coin_gain
+            except economy_core.DuplicateTransactionError:
+                # قبلاً با همین کلید پرداخت شده (مثلاً تلاش دوباره بعد از کرش) — دوباره نده.
+                logger.warning(f"جایزه‌ی تکراری achievement:{key} برای {chat_id}/{uid} نادیده گرفته شد.")
+            except economy_core.EconomyFrozenError:
+                # اقتصاد این گروه فریزه؛ XP داده شد ولی سکه‌ی این دستاورد موقتاً صرف‌نظر می‌شه.
+                logger.warning(f"اقتصاد گروه {chat_id} فریزه؛ جایزه‌ی سکه‌ی achievement:{key} برای {uid} رد شد.")
     return total_xp, total_coins
 
 

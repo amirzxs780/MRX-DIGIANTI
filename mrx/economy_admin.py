@@ -305,8 +305,21 @@ async def reset_user_economy_command(update: Update, context: ContextTypes.DEFAU
         )
         return
 
-    host._wallet[chat.id].pop(target_id, None)
-    economy_core._bank[chat.id].pop(target_id, None)
+    # فیکس معماری Economy Core: قبلاً اینجا مستقیم host._wallet[...].pop(...) و
+    # economy_core._bank[...].pop(...) انجام می‌شد — یعنی موجودیِ کاربر بدون
+    # هیچ رکورد Ledger ناپدید می‌شد (نه قابل حسابرسی، نه توی /transactions این
+    # کاربر قابل توضیح). الان از admin_set_balance/remove_bank_coins (همون
+    # API‌های رسمی ادمینی Economy Core) عبور می‌کنه تا صفر شدنِ کیف‌پول/بانک
+    # هم توی Ledger مرکزی ثبت بشه.
+    admin_id = update.effective_user.id
+    await economy_core.admin_set_balance(
+        chat.id, target_id, 0, note="ریست اقتصاد کاربر (/reseteconomy)", admin_id=admin_id,
+    )
+    bank_bal = economy_core.get_bank_balance(chat.id, target_id)
+    if bank_bal:
+        await economy_core.remove_bank_coins(
+            chat.id, target_id, bank_bal, kind="OTHER", note="ریست اقتصاد کاربر (/reseteconomy)",
+        )
 
     for modname, attr in [
         ("economy_jobs", "_current_job"), ("economy_jobs", "_job_progress"),
@@ -488,6 +501,8 @@ async def save_state():
                     pass
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(_collect_state(), f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, path)
         await asyncio.to_thread(_write)
     except Exception:

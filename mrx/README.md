@@ -175,3 +175,130 @@ ADMIN_PERMISSIONS = {
 - این نسخه از حافظه‌ی داخلی (in-memory) برای لیست چت‌ها، آمار، اخطارها و لیست دوست/دشمن استفاده می‌کنه؛ یعنی با ری‌استارت شدن ربات، همه‌شون پاک می‌شن. برای production بهتره این‌ها رو توی یک فایل یا دیتابیس (مثلاً SQLite) ذخیره کنی.
 - برای هاست کردن ۲۴ ساعته، می‌تونی از سرویس‌هایی مثل یک VPS ساده، Railway، یا PythonAnywhere استفاده کنی.
 - اگه می‌خوای ربات به‌جای polling از webhook استفاده کنه (برای سرورهای production)، بگو تا اون بخش رو هم اضافه کنم.
+
+---
+
+## 💰 معماری Economy Core (V17 — بعد از آدیت کامل)
+
+این بخش مستند می‌کنه که سیستم اقتصادی DIGNANTI واقعاً چطور کار می‌کنه، بعد از
+یه آدیت کامل فنی/مالی/امنیتی (تاریخ این آدیت: ۲۰۲۶). هیچ معماری‌ای از نو
+نوشته نشده؛ همه‌چیز روی همون پایه‌ی موجود (هر ماژول با `import bot as host`
+به globalهای مشترک وصل می‌شه، هر ماژول state خودشو توی یه فایل JSON جدا نگه
+می‌داره) اصلاح شده.
+
+### مسئولیت ماژول‌ها (لایه‌ی اقتصاد)
+
+| ماژول | مسئولیت |
+|---|---|
+| `economy_core.py` | **تنها مرجع مالی.** تنها جایی که مجازه `host._wallet` یا موجودی بانکی رو مستقیم تغییر بده. `add_coins`/`remove_coins`/`transfer_coins`/`deposit`/`withdraw`/`admin_set_balance`/`admin_adjust_balance`/`add_bank_coins`/`remove_bank_coins`/`rollback_transaction` + Ledger واقعی (`create_transaction`/`record_transaction`) + Idempotency Index + فریز اقتصاد + Net Worth Registry. |
+| `economy_engine.py` | تاریخچه‌ی تراکنش «قدیمی» (legacy) + Boost آیتم‌ها (Coin/XP Multiplier) + Streak روزانه. `economy_core.record_transaction` هنوزم به `economy_engine.log_transaction` هم می‌نویسه تا `/transactions` قدیمی نشکنه. |
+| `economy_bank/market/property/business/jobs/...` | هرکدوم منطق مخصوص خودشون (وام، سهام، ملک، شغل، ...) رو دارن؛ وقتی پای *پول واقعی* وسطه، همه از `economy_core` عبور می‌کنن - خودشون هیچ‌وقت `host._wallet` یا `economy_core._bank` رو مستقیم دست نمی‌زنن. |
+| `profile_engine.py` | XP/Level/Achievement/Prestige. جایزه‌ی سکه‌ایِ Achievement/Level از `economy_core.add_coins`/`add_coins_sync` عبور می‌کنه (قبل از آدیت مستقیم بود - فیکس شد، پایین‌تر). |
+| `poll_engine.py` | نظرسنجی + جایزه‌ی رأی اول. جایزه از `economy_core.add_coins_sync` عبور می‌کنه (قبل از آدیت مستقیم بود - فیکس شد). |
+| `owner_panel.py` | پنل خصوصیِ مالک برای ساخت/عزل ادمین پویا (جدا از `config.ADMIN_IDS`)؛ فقط توی پیوی و فقط برای `is_owner`. |
+| `economy_panel.py` | منوی اقتصادیِ **خودِ کاربر** (self-service) - هیچ اکشنی روی کاربر دیگه انجام نمی‌ده، پس نیازی به چک دسترسی ادمین نداره. |
+
+### Economy Core API (خلاصه)
+
+```python
+await economy_core.add_coins(chat_id, uid, amount, kind="REWARD", note="...",
+                              idempotency_key="دسته:شناسه_ثابت")
+await economy_core.remove_coins(chat_id, uid, amount, kind="PURCHASE", allow_bank=True)
+await economy_core.transfer_coins(chat_id, from_uid, to_uid, amount, kind="TRANSFER")
+await economy_core.deposit(chat_id, uid, amount)      # کیف‌پول -> بانک
+await economy_core.withdraw(chat_id, uid, amount)     # بانک -> کیف‌پول
+await economy_core.admin_set_balance(chat_id, uid, new_amount, admin_id=...)
+await economy_core.admin_adjust_balance(chat_id, uid, delta, admin_id=...)
+await economy_core.rollback_transaction(transaction_id, reason="...")
+economy_core.add_coins_sync(...)   # نسخه‌ی Sync - فقط برای مسیرهای قدیمیِ
+                                   # غیر-async (پایین‌تر توضیح داده شده)
+```
+
+قوانین ثابت: `amount` همیشه `>= 0` می‌گیرن (برای کم‌کردن از `remove_coins`
+استفاده کن، نه `amount` منفی به `add_coins`)؛ موجودی هیچ‌وقت منفی نمی‌شه
+(`InsufficientFundsError`)؛ هر عملیات یه `transaction_id` یکتا توی Ledger
+می‌گیره.
+
+### Transaction Ledger
+
+هر تراکنش یه رکورد کامل توی `economy_core._ledger` داره: `transaction_id`
+(UUID)، `user_id`/`target_user_id`/`chat_id`، `amount`، `type` (یکی از
+`TRANSACTION_TYPES`)، `status` (`COMPLETED`/`ROLLED_BACK`)، `timestamp`،
+`idempotency_key`. `get_transaction_history(chat_id, uid)` تاریخچه‌ی هرکسی
+رو می‌ده؛ `get_ledger_volume`/`find_suspicious_transactions` برای ابزارهای
+ادمینی (Phase 26) استفاده می‌شن. Ledger با `MAX_LEDGER_SIZE=20000` رکورد
+Prune می‌شه (قدیمی‌ترین‌ها حذف می‌شن تا فایل state بی‌نهایت بزرگ نشه).
+
+### Idempotency (جلوگیری از پرداخت دوبار)
+
+همه‌ی توابع نوشتنِ `economy_core` یه پارامتر اختیاری `idempotency_key` می‌گیرن.
+اگه قبلاً یه تراکنشِ `COMPLETED` با همون کلید ثبت شده باشه،
+`DuplicateTransactionError` می‌زنه و **هیچ مبلغی دوباره اضافه/کم نمی‌شه**.
+کلید باید دقیقاً یه بار در طول عمرِ همون «جایزه‌ی مشخص» قابل تولید باشه؛
+الگوی استانداردِ این پروژه:
+
+```
+achievement:{chat_id}:{user_id}:{achievement_key}
+levelreward:{chat_id}:{user_id}:{level}
+poll_reward:{poll_id}:{user_id}
+mission_reward:{chat_id}:{user_id}:{period}:{period_key}:{mission_key}
+daily_reward:{chat_id}:{user_id}:{YYYY-MM-DD}      # تاریخ UTC
+econquick_bonus:{chat_id}:{callback_query.id}:{user_id}
+```
+
+این کلیدها توی `_idempotency_index` ذخیره می‌شن و با `save_state`/`load_state`
+Persist می‌شن - یعنی حتی بعد از کرش/ری‌استارت هم یادشون نمی‌ره.
+
+**`add_coins_sync` چیه و چرا لازم شد؟** `profile_engine.grant_rewards_for_unlocked`
+و `poll_engine._grant_vote_reward` قبل از این آدیت مستقیم `host._wallet[...] +=`
+می‌زدن (بدون Ledger/Idempotency/چک فریز). این دو تابع، و ~۲۰ جای دیگه که
+`economy_achievements.check_all` رو صدا می‌زنن، همه‌شون **sync** هستن (نه
+`async def`)؛ تبدیل زنجیره‌ایِ همه‌شون به `async` یه تغییر معماریِ خیلی بزرگ و
+پرریسک بود (برخلاف اصل «تغییرات تدریجی» این آدیت). به‌جاش، `economy_core.add_coins_sync`
+دقیقاً همون کاری که `add_coins` می‌کنه رو sync انجام می‌ده. ایمنیِ Race Condition
+این تابع از عمدیِ تک‌رشته‌ایِ asyncio میاد: چون هیچ `await` ای نداره، هیچ Task
+دیگه‌ای نمی‌تونه وسطش اجرا بشه (توضیح کامل‌تر توی docstring خودِ تابع و توی
+`AUDIT_REPORT.md`). **هرگز این تابع رو از Thread/Executor صدا نزن.**
+
+### Backup و بازیابی
+
+هر ماژول (شامل `economy_core`) موقع `save_state`:
+1. اگه فایل state فعلی وجود داشته باشه، یه کپی ازش می‌گیره (`<file>.bak`).
+2. state جدید رو توی `<file>.tmp` می‌نویسه، `flush()` + `os.fsync()` می‌کنه
+   (تضمین می‌کنه دیتا واقعاً روی دیسک نوشته شده، نه فقط توی بافر OS)، بعد با
+   `os.replace()` (اتمیک توی POSIX/Windows) جایگزین فایل اصلی می‌کنه.
+
+موقع `load_state`: اگه فایل اصلی خراب/نامعتبر بود (مثلاً JSON نصفه از کرش
+وسط نوشتن)، خودکار از `.bak` بازیابی می‌کنه؛ اگه هیچ‌کدوم نبود، state خالی
+(تمیز) شروع می‌شه - بدون کرش.
+
+### ⚠️ ریسک شناخته‌شده و مستندشده (رفع‌نشده - نیاز به تصمیم معماری بزرگ‌تر)
+
+موجودی کیف‌پول (`host._wallet`) توی فایل **خودِ `bot.py`** ذخیره می‌شه، ولی
+Ledger/Idempotency توی فایل **`economy_core`** ذخیره می‌شه - دو فایل جدا، هر
+کدوم با `os.replace` خودشون اتمیکن، ولی این دو نوشتن نسبت به هم اتمیک نیستن
+(چون `save_state()` سراسریِ `bot.py` همه‌ی ماژول‌ها رو با `asyncio.gather`
+هم‌زمان صدا می‌زنه). یعنی تئوریاً اگه سرور دقیقاً بین نوشتنِ این دو فایل کرش
+کنه، ممکنه بعد از ری‌استارت یکی از این دو کمی عقب‌تر از اون‌یکی باشه. در
+عمل، چون هر دو مقدار (wallet و ledger) توی حافظه همیشه با هم و در یک لحظه‌ی
+sync (بدون await بینشون) آپدیت می‌شن، این فقط یه ریسکِ *نوشتنِ روی دیسک* است،
+نه یه باگِ منطقیِ حین اجرا. رفعِ کاملش نیاز به یکی‌کردنِ همه‌ی Persistence
+پروژه (که الان هر ماژول فایل JSON جدای خودشو داره) توی یه store تراکنشیِ
+واحد داره - این یه بازنویسیِ معماریِ بزرگه که از اسکوپِ «حفظ معماریِ فعلی،
+تغییرات تدریجی» این آدیت بیرونه. جزییات کامل در `AUDIT_REPORT.md`.
+
+### تست‌های خودکار
+
+```bash
+export BOT_TOKEN=dummy_for_tests   # فقط برای اینکه config.py موقع import کرش نکنه
+python3 -m unittest tests.test_economy_audit -v
+```
+
+۲۷ تست: هم‌زمانی (خرید/برداشت/انتقال هم‌زمان، بدون موجودی منفی، بدون گم‌شدنِ
+پول)، Idempotency (جایزه‌ی تکراری achievement/poll/mission رد می‌شه حتی زیر
+فشار ۲۰ تا Task هم‌زمان با یه کلید)، و Persistence (Save/Load، بکاپ، بازیابی
+از JSON خراب، نوشتنِ ناموفق چیزی رو خراب نمی‌کنه). محدودیت دانسته‌شده: محیط
+این آدیت دسترسی اینترنت نداشت و نتونست `python-telegram-bot` واقعی رو نصب
+کنه، پس تست‌ها به‌جای `bot.py` واقعی از یه استاب سبک (`tests/_stub_bot.py` +
+`tests/_telegram_stub/`) استفاده می‌کنن. جزییاتِ کامل و اسکوپِ دقیق توی
+`AUDIT_REPORT.md`.

@@ -46,6 +46,7 @@ Log جدا ثبت می‌شه و از پنل («📋 گزارش») قابل مش
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 import time
 
@@ -324,9 +325,16 @@ async def _try_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, usernam
     user = update.effective_user
     uname = _norm(username_raw)
 
+    # فیکس Phase 7 (امنیت): قبلاً پیام «یوزرنیم پیدا نشد» با پیام «رمز اشتباهه»
+    # فرق داشت - یعنی مهاجم می‌تونست فقط با امتحان یوزرنیم‌های مختلف (بدون
+    # دونستن رمز) بفهمه کدوم یوزرنیم‌ها همین الان یه دعوتِ زنده‌ی فعال دارن
+    # (Username/Invite Enumeration) و حمله‌ی Brute-Force رو فقط رو همونا متمرکز
+    # کنه. الان هر دو حالت («یوزرنیم نیست» و «رمز غلطه») دقیقاً همون پیامِ
+    # عمومی رو می‌دن.
+    _GENERIC_FAIL = "❌ یوزرنیم/رمز درست نیست یا این دعوت قبلاً استفاده/لغو شده."
     invite = _pending_invites.get(uname)
     if invite is None:
-        await message.reply_text("❌ یوزرنیم/رمز درست نیست یا این دعوت قبلاً استفاده/لغو شده.")
+        await message.reply_text(_GENERIC_FAIL)
         return
 
     display = invite.get("username_display") or uname
@@ -334,11 +342,14 @@ async def _try_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, usernam
     if invite["expires"] < time.time():
         _pending_invites.pop(uname, None)
         _audit(invite["created_by"], "CLAIM_EXPIRED", note=f"@{uname}")
-        await message.reply_text("⌛ این دعوت منقضی شده. از مالک بخواه دوباره دعوتت کنه.")
+        await message.reply_text(_GENERIC_FAIL)
         await save_state()
         return
 
-    if _hash(password) != invite["password_hash"]:
+    # hmac.compare_digest به‌جای != : مقایسه‌ی Constant-Time (جلوگیری از Timing
+    # Attack روی هش رمز؛ شدتش پایینه چون کانال تلگرامه نه تماس مستقیم لوکال،
+    # ولی هزینه‌ی فیکسش صفره).
+    if not hmac.compare_digest(_hash(password), invite["password_hash"]):
         invite["attempts"] += 1
         if invite["attempts"] >= _MAX_CLAIM_ATTEMPTS:
             _pending_invites.pop(uname, None)
@@ -773,6 +784,8 @@ async def save_state():
                 pass
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(_collect_state(), f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, path)
 
     try:

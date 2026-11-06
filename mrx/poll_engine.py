@@ -64,6 +64,8 @@ def _write_state_file(data: dict):
             logger.warning(f"بکاپ گرفتن از state ناموفق بود: {e}")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, STATE_FILE)
 
 
@@ -301,9 +303,13 @@ def poll_keyboard(poll_id: int, poll: dict) -> InlineKeyboardMarkup:
 # ✅ Voting (Single/Multiple + Reward با جلوگیری از جایزه‌ی تکراری)
 # ---------------------------------------------------------------------------
 
-def record_vote(poll: dict, uid: int, idx: int) -> str:
+def record_vote(poll: dict, uid: int, idx: int, poll_id: int | None = None) -> str:
     """رأی رو ثبت می‌کنه (تک‌انتخابی = جایگزین، چندتایی = Toggle) و در صورت فعال بودن
-    Reward، فقط یک‌بار برای هر کاربر در این نظرسنجی جایزه می‌ده. متن answer برمی‌گردونه."""
+    Reward، فقط یک‌بار برای هر کاربر در این نظرسنجی جایزه می‌ده. متن answer برمی‌گردونه.
+    poll_id برای ساختن Idempotency Key استاندارد (poll_reward:{poll_id}:{user_id})
+    به _grant_vote_reward پاس داده می‌شه؛ نبودش (فراخوان‌های قدیمی‌تر) چیزی رو نمی‌شکنه،
+    فقط اون لایه‌ی اضافه‌ی idempotency مرکزی رو غیرفعال می‌کنه (dedup اصلی هنوز از
+    طریق rewarded_voters تضمین می‌شه)."""
     is_first_vote = uid not in poll["votes"]
 
     if poll.get("multi"):
@@ -320,23 +326,39 @@ def record_vote(poll: dict, uid: int, idx: int) -> str:
         answer = "رأیت ثبت شد ✅"
 
     if is_first_vote:
-        _grant_vote_reward(poll, uid)
+        _grant_vote_reward(poll, uid, poll_id)
 
     return answer
 
 
-def _grant_vote_reward(poll: dict, uid: int) -> None:
+def _grant_vote_reward(poll: dict, uid: int, poll_id: int | None = None) -> None:
+    """فیکس معماری Economy Core: قبلاً مستقیم host._wallet[...] += reward انجام
+    می‌شد و فقط Best-Effort (try/except بی‌سروصدا) به economy_engine.log_transaction
+    لاگ می‌شد — بدون Ledger مرکزی، بدون Idempotency Key، بدون چک فریز اقتصاد.
+    الان از economy_core.add_coins_sync عبور می‌کنه (نسخه‌ی Sync چون record_vote
+    هنوز sync صدا زده می‌شه از bot.py؛ توضیح ایمنیِ Race Condition توی
+    economy_core.add_coins_sync هست) که خودش هم رکورد Ledger می‌سازه و هم
+    economy_engine.log_transaction رو صدا می‌زنه (پس دیگه لازم نیست اینجا جدا
+    صداش بزنیم — صداکردن جدا باعث Duplicate شدنِ رکورد توی تاریخچه‌ی legacy می‌شد)."""
     reward = poll.get("reward_coins", 0)
     if not reward or uid in poll.get("rewarded_voters", set()):
         return
-    host = _host()
-    host._wallet[poll["chat_id"]][uid] += reward
-    poll.setdefault("rewarded_voters", set()).add(uid)
+    import economy_core
+    chat_id = poll["chat_id"]
+    idem_key = f"poll_reward:{poll_id}:{uid}" if poll_id is not None else None
     try:
-        import economy_engine
-        economy_engine.log_transaction(poll["chat_id"], uid, "poll_reward", reward, note=poll["question"][:40])
-    except Exception as e:
-        logger.warning(f"ثبت تراکنش جایزه‌ی نظرسنجی ناموفق بود: {e}")
+        economy_core.add_coins_sync(
+            chat_id, uid, reward, kind="REWARD",
+            note=f"poll_reward: {poll['question'][:40]}",
+            idempotency_key=idem_key,
+        )
+    except economy_core.DuplicateTransactionError:
+        logger.warning(f"جایزه‌ی تکراری poll_reward برای نظرسنجی {poll_id}/{uid} نادیده گرفته شد.")
+        return
+    except economy_core.EconomyFrozenError:
+        logger.warning(f"اقتصاد گروه {chat_id} فریزه؛ جایزه‌ی رأی نظرسنجی {poll_id} برای {uid} رد شد.")
+        return
+    poll.setdefault("rewarded_voters", set()).add(uid)
 
 
 # ---------------------------------------------------------------------------

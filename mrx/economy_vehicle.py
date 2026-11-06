@@ -818,6 +818,8 @@ def _write_state_file(data: dict):
             logger.warning(f"بکاپ گرفتن از state ناموفق بود: {e}")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, STATE_FILE)
 
 

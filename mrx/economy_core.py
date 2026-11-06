@@ -53,13 +53,22 @@ logger = logging.getLogger("economy_core")
 
 STATE_FILE = getattr(config, "ECONOMY_CORE_STATE_FILE", "economy_core_state.json")
 
+# فیکس (آدیتِ دوم - مسئله‌ی ۳ - هماهنگیِ Wallet/Ledger حینِ کرش): فایلِ
+# Wallet (توی bot.py) و فایلِ Ledger (همین‌جا) دو os.replace() کاملاً مستقل
+# دارن؛ این فایل یه Write-Ahead Journal سبک (append-only، JSONL، هر خط
+# fsync شده) هست که مستقل از هر دوِ اون فایل‌های بزرگ، هر تغییرِ Wallet رو
+# همون لحظه که توی حافظه اعمال می‌شه ثبت می‌کنه. جزییاتِ کامل پایین‌تر کنار
+# reconcile_wallet_journal().
+WALLET_JOURNAL_FILE = getattr(config, "ECONOMY_WALLET_JOURNAL_FILE", STATE_FILE + ".wallet_journal.jsonl")
+_WALLET_JOURNAL_KEEP_LINES = 500
+
 # نسخه‌ی ساختار Stateِ Economy Core. هر بار ساختار داده عوض شد، این رو ببر بالا
 # و منطق Migration مربوطه رو زیر migrate_state() اضافه کن. Migration باید
 # Idempotent باشه (اجرای دوباره‌ش نباید داده رو خراب کنه).
 # نسخه ۲ (فاز ۱ ارتقا): اضافه‌شدن Transaction Ledger واقعی (transaction_id,
 # status, idempotency_key). داده‌ی قدیمی از دست نمی‌ره؛ صرفاً یک ledger خالی
 # برای رکوردهای گذشته (که transaction_id نداشتن) ساخته می‌شه.
-ECONOMY_STATE_VERSION = 2
+ECONOMY_STATE_VERSION = 3
 
 # انواع رسمی تراکنش (طبق مستند معماری). هر ماژولی که kind/type جدید لازم
 # داره باید از همین لیست استفاده کنه؛ مقادیر ناشناخته به OTHER نگاشت می‌شن.
@@ -118,6 +127,15 @@ _sink_totals = defaultdict(lambda: defaultdict(int))      # chat_id -> kind -> �
 # نیاز به هیچ Task پاک‌سازیِ دوره‌ایِ جدا).
 _user_locks: "weakref.WeakValueDictionary[tuple[int, int], asyncio.Lock]" = weakref.WeakValueDictionary()
 
+# فیکس (آدیتِ دوم - مسئله‌ی ۱): قفلِ جدا به‌ازای هر Transaction ID، مخصوصِ
+# rollback_transaction. چرا جدا از _user_locks؟ چون _user_locks روی (chat_id,
+# uid) قفل می‌کنه - این برای جلوگیری از رول‌بکِ دوبرابرِ *همون* تراکنش کافی
+# نیست؛ باید دقیقاً روی خودِ transaction_id قفل بگیریم تا خواندنِ status،
+# اعمالِ اثرِ معکوس، و تغییرِ status به ROLLED_BACK یک واحدِ atomic بشه (نه
+# اینکه فقط موجودیِ کاربر Serialize بشه). همون الگوی WeakValueDictionary
+# (بدون نشتی حافظه) برای این یکی هم تکرار شده.
+_rollback_locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = weakref.WeakValueDictionary()
+
 # 📊 Net Worth Registry — ماژول‌های بعدی (Property/City/Pet/Market/...) با
 # register_net_worth_source(fn) خودشونو ثبت می‌کنن. fn باید sync و سریع باشه
 # (فقط خوندن از حافظه، نه I/O). این باعث می‌شه Economy Core مجبور نباشه
@@ -137,8 +155,43 @@ _ledger: dict[str, dict] = {}
 _ledger_order: list[str] = []
 # chat_id -> user_id -> [transaction_id, ...] به ترتیب زمانی (برای تاریخچه‌ی سریع)
 _ledger_by_user: defaultdict[int, defaultdict[int, list]] = defaultdict(lambda: defaultdict(list))
-# idempotency_key -> transaction_id (جلوگیری از Duplicate Reward/Double Spend)
-_idempotency_index: dict[str, str] = {}
+# idempotency_key -> {"transaction_id": ..., "status": TXN_COMPLETED/TXN_ROLLED_BACK}
+# (جلوگیری از Duplicate Reward/Double Spend)
+#
+# فیکس (آدیتِ دوم - مسئله‌ی ۲ - Idempotency بعد از Pruning شدنِ Ledger):
+# قبلاً این فقط transaction_id رو نگه می‌داشت (dict[str, str])، و چک
+# Duplicate وابسته بود به اینکه خودِ رکورد توی _ledger هنوز موجود باشه
+# (`existing in _ledger and _ledger[existing]["status"] == TXN_COMPLETED`).
+# ولی _ledger با MAX_LEDGER_SIZE=20000 هرس می‌شه (قدیمی‌ترین رکوردها حذف
+# می‌شن) - این یعنی بعد از اینکه ۲۰٬۰۰۰ تراکنشِ دیگه (از هر کاربر/هر نوعی)
+# بعد از یه تراکنشِ idempotency-dar اتفاق بیفته، رکوردش از _ledger حذف
+# می‌شد، چک `existing in _ledger` نادرست False برمی‌گردوند، و همون
+# idempotency_key دوباره قابل‌استفاده می‌شد - یعنی یه Achievement/Mission/
+# Poll Reward می‌تونست، بعد از فشارِ کافی، دوباره پرداخت بشه. فیکس: این
+# دیکشنری حالا خودش وضعیت (status) رو هم مستقیم نگه می‌داره - دیگه به
+# وجودِ رکورد توی _ledger وابسته نیست، پس هیچ‌وقت (نه با Pruning، نه با
+# Restart) خودش پاک نمی‌شه مگر با rollback صریح. توجه: برخلافِ _ledger، این
+# دیکشنری Pruning نداره (قصداً - Pruning دقیقاً همون باگیه که داریم فیکس
+# می‌کنیم)؛ رشدش کندِه (یه ورودی به‌ازای هر Claim، نه هر تراکنشِ خام) ولی
+# بدونِ سقف - جزییات توی AUDIT_REPORT.md.
+_idempotency_index: dict[str, dict] = {}
+
+
+def _idempotency_check(idempotency_key: str | None) -> None:
+    """اگه idempotency_key قبلاً به یک تراکنشِ COMPLETED منجر شده باشه،
+    DuplicateTransactionError می‌زنه. مستقیم از _idempotency_index می‌خونه -
+    هیچ وابستگی‌ای به اینکه رکورد توی _ledger (که Prune می‌شه) هنوز باشه یا
+    نه نداره."""
+    if not idempotency_key:
+        return
+    entry = _idempotency_index.get(idempotency_key)
+    if entry and entry.get("status") == TXN_COMPLETED:
+        raise DuplicateTransactionError(entry.get("transaction_id"))
+
+
+def _idempotency_mark(idempotency_key: str | None, txn_id: str, status: str = TXN_COMPLETED) -> None:
+    if idempotency_key:
+        _idempotency_index[idempotency_key] = {"transaction_id": txn_id, "status": status}
 
 
 class InsufficientFundsError(Exception):
@@ -197,6 +250,14 @@ def _lock_for(chat_id: int, uid: int) -> asyncio.Lock:
     return lock
 
 
+def _rollback_lock_for(transaction_id: str) -> asyncio.Lock:
+    lock = _rollback_locks.get(transaction_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _rollback_locks[transaction_id] = lock
+    return lock
+
+
 # ---------------------------------------------------------------------------
 # 💾 Persistence — Atomic Save + Backup + Recovery + Migration
 # ---------------------------------------------------------------------------
@@ -233,10 +294,63 @@ def _write_state_file(data: dict):
     os.replace(tmp, STATE_FILE)  # Atomic روی همه‌ی سیستم‌عامل‌های POSIX/Windows
 
 
+def _journal_append(chat_id: int, uid: int, txn_id: str, wallet_after: int, record: dict) -> None:
+    """بعد از هر تغییرِ Wallet (همون لحظه، توی همون تابعی که قفلِ
+    _lock_for رو گرفته - بدونِ هیچ await ای وسطش)، یه خطِ append-only فسینک‌شده
+    به Journal اضافه می‌کنه. این مستقل از فایلِ بزرگِ Wallet (bot.py) و فایلِ
+    بزرگِ Ledger (همین ماژول) - هر دوش فقط دوره‌ای (توی save_state) نوشته
+    می‌شن - بلافاصله و به‌صورتِ تکی روی دیسکه. اگه خودِ نوشتنِ این خط شکست
+    بخوره (مثلاً دیسک پر)، فقط Warning لاگ می‌شه و خودِ عملیاتِ مالی (که از
+    قبل توی حافظه اعمال شده) خراب نمی‌شه - این فایل صرفاً برای Recovery
+    کمکیه، نه مسیرِ اصلیِ درست‌کار کردنِ ربات."""
+    try:
+        line = json.dumps({
+            "txn_id": txn_id,
+            "chat_id": chat_id,
+            "uid": uid,
+            "wallet_after": wallet_after,
+            "record": record,
+            "ts": time.time(),
+        }, ensure_ascii=False)
+        with open(WALLET_JOURNAL_FILE, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception as e:
+        logger.warning(f"نوشتنِ Wallet Journal ناموفق بود: {e}")
+
+
+def _journal_truncate() -> None:
+    """بعد از ذخیره‌ی موفقِ فایلِ بزرگِ Ledger (که توسطِ bot.py.save_state همیشه
+    *بعد از* نوشتنِ Sync فایلِ Wallet خودش صدا زده می‌شه)، بخشِ قدیمیِ Journal
+    رو که دیگه لازم نیست کوتاه می‌کنه تا این فایل بی‌نهایت رشد نکنه.
+    محافظه‌کارانه: صفر خط نگه نمی‌داریم، آخرین N خط رو نگه می‌داریم - چون از
+    اینجا نمی‌تونیم ۱۰۰٪ مطمئن باشیم نوشتنِ فایلِ Wallet توسطِ bot.py (که در
+    تابعِ دیگه‌ای و مستقل از این‌جا اجرا می‌شه) واقعاً موفق بوده یا فقط
+    Warning خورده و رد شده."""
+    try:
+        if not os.path.exists(WALLET_JOURNAL_FILE):
+            return
+        with open(WALLET_JOURNAL_FILE, encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) <= _WALLET_JOURNAL_KEEP_LINES:
+            return
+        tail = lines[-_WALLET_JOURNAL_KEEP_LINES:]
+        tmp = WALLET_JOURNAL_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.writelines(tail)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, WALLET_JOURNAL_FILE)
+    except Exception as e:
+        logger.warning(f"کوتاه‌کردنِ Wallet Journal ناموفق بود: {e}")
+
+
 async def save_state():
     async with _save_lock:
         try:
             await asyncio.to_thread(_write_state_file, _collect_state())
+            await asyncio.to_thread(_journal_truncate)
         except Exception as e:
             logger.warning(f"ذخیره‌ی state موتور Economy Core ناموفق بود: {e}")
 
@@ -259,7 +373,32 @@ def migrate_state(data: dict) -> dict:
         data.setdefault("ledger_order", [])
         data.setdefault("idempotency_index", {})
         data["version"] = 2
-    # نسخه‌های بعدی این‌جا اضافه می‌شن: if version < 3: ...
+    if version < 3:
+        # نسخه‌ی ۲ -> ۳ (آدیتِ دوم - مسئله‌ی ۲): فرمتِ idempotency_index عوض
+        # شد - از dict[str, str] (کلید -> transaction_id خام) به
+        # dict[str, {"transaction_id":..., "status":...}] تا دیگه چک
+        # Duplicate به وجودِ رکورد توی _ledger (که Prune می‌شه) وابسته نباشه.
+        # اینجا فایل‌های قدیمی رو مهاجرت می‌کنیم: برای هر ورودیِ قدیمی که هنوز
+        # رشته‌ست، سعی می‌کنیم status واقعی‌شو از خودِ ledger (اگه هنوز اون
+        # تراکنش Prune نشده) بخونیم؛ اگه پیدا نشد (یعنی همین الان هم به‌خاطرِ
+        # باگِ قدیمی Prune شده بود)، محافظه‌کارانه فرض می‌کنیم COMPLETEDه
+        # (ترجیحِ امنیتی: جلوگیری از یه پرداختِ دوباره‌ی احتمالی، حتی به قیمتِ
+        # اینکه شاید یه کلیدِ قبلاً rollback-شده‌ی خیلی قدیمی اشتباهاً یه بار
+        # دیگه مسدود بمونه - این حالت فوق‌العاده نادره چون rollback هنوز
+        # نادره، و خیلی کم‌خطرتر از پرداختِ تکراریه).
+        old_ledger = data.get("ledger", {})
+        new_index = {}
+        for key, val in data.get("idempotency_index", {}).items():
+            if isinstance(val, dict):
+                new_index[key] = val  # از قبل فرمتِ جدیده (مثلاً Migration دوباره اجرا شده)
+                continue
+            txn_id = val  # فرمتِ قدیمی: مقدار همون transaction_id خام بود
+            rec = old_ledger.get(txn_id)
+            status = rec["status"] if rec else TXN_COMPLETED
+            new_index[key] = {"transaction_id": txn_id, "status": status}
+        data["idempotency_index"] = new_index
+        data["version"] = 3
+    # نسخه‌های بعدی این‌جا اضافه می‌شن: if version < 4: ...
     return data
 
 
@@ -319,6 +458,122 @@ def load_state():
     logger.info("وضعیت Economy Core (بانک + Ledger) از فایل بارگذاری شد.")
 
 
+def reconcile_wallet_journal() -> dict:
+    """فیکس (آدیتِ دوم - مسئله‌ی ۳ - هماهنگیِ Wallet و Ledger حینِ کرش).
+
+    ⚠️ ترتیبِ صدا زدن حیاتیه: این تابع باید دقیقاً *بعد از هر دوی* این مراحل
+    صدا زده بشه:
+        ۱) economy_core.load_state() (همین ماژول - Ledger/Idempotency Index
+           از فایلِ خودش بارگذاری شده)
+        ۲) bot.py بخشِ خودشو از فایلِ state‌ِ خودش بارگذاری کرده و دیکشنریِ
+           _wallet رو پر کرده
+    (در عمل: از داخلِ bot.py.load_state، بلافاصله بعدِ حلقه‌ای که
+    `_wallet[int(cid)] = ...` می‌سازه.)
+
+    چرا این فیکس لازمه؟ Wallet (فایلِ bot.py) و Ledger/Bank (فایلِ همین
+    ماژول) دو os.replace() کاملاً مستقلن - bot.py.save_state اول فایلِ
+    خودشو Sync می‌نویسه، بعد با asyncio.gather همه‌ی موتورها (از جمله
+    economy_core) رو هم‌زمان صدا می‌زنه. اگه برنامه دقیقاً وسطِ این فرایند
+    کرش کنه، دو حالتِ ناهماهنگ ممکنه:
+        (الف) فایلِ Ledger جدیدتر از فایلِ Wallet: Ledger/Idempotency یه
+              تراکنش رو "انجام‌شده" می‌دونه ولی فایلِ Wallet هنوز مبلغشو
+              نداره -> کاربر جایزه/پولشو "گم" می‌کنه (باگِ آزاردهنده، ولی
+              نه یه خطرِ امنیتی).
+        (ب) فایلِ Wallet جدیدتر از فایلِ Ledger: کیف‌پول مبلغو داره ولی
+              Ledger/Idempotency Index خبر نداره -> یه idempotency_key
+              ممکنه اشتباهاً دوباره قبول بشه و دوباره پرداخت بشه (Double-Pay
+              واقعی - این خطرناک‌تریه).
+
+    راه‌حل: Wallet Journal (فایلِ append-only و fsync-per-line که در
+    add_coins/remove_coins/transfer_coins/admin_set_balance/
+    admin_adjust_balance/deposit/withdraw نوشته می‌شه، دقیقاً همون لحظه که
+    Wallet توی حافظه تغییر می‌کنه - مستقل از هر دو فایلِ بزرگ) رو می‌خونه و:
+        • برای هر رکوردی که توی Journal هست ولی توی _ledger (بارگذاری‌شده از
+          فایلِ احتمالاً قدیمی‌ترِ Ledger) نیست -> رکوردِ Ledger/Idempotency
+          رو مستقیماً از خودِ Journal بازسازی می‌کنه (حالتِ ب رو می‌بنده).
+          توجه: این "اجرای دوباره‌ی عملیاتِ مالی" *نیست* - هیچ‌وقت
+          add_coins/remove_coins دوباره صدا زده نمی‌شن؛ فقط رکوردِ از-قبل-
+          اتفاق‌افتاده بازسازی می‌شه.
+        • برای هر (chat_id, uid)، آخرین مقدارِ wallet_after ثبت‌شده توی
+          Journal رو با مقدارِ فعلیِ _wallet مقایسه می‌کنه؛ اگه فرق داشت (یعنی
+          فایلِ Wallet قدیمی‌تر بوده)، مستقیماً مقدارِ صحیح رو ست می‌کنه (نه
+          اینکه Delta رو دوباره اضافه کنه - این دقیقاً همون چیزیه که دستورِ
+          کار صراحتاً منع کرده: "هرگز یه عملیاتِ مالیِ از-قبل-اعمال‌شده رو
+          دوباره Replay نکن").
+
+    محدودیتِ صادقانه (طبقِ دستورِ صریح: ادعای Crash Consistency کامل ممنوعه
+    مگر با تستِ Recovery اثبات بشه): این مکانیزم فقط پنجره‌ی بینِ آخرین
+    Flush موفقِ Journal و لحظه‌ی کرش رو می‌پوشونه. اگه خودِ نوشتنِ یه خطِ
+    Journal (fsync) شکست بخوره (مثلاً دیسک پر)، دقیقاً همون یک تراکنش از
+    این محافظت بیرونه - این مورد با Warning لاگ می‌شه، نه با سکوت. همچنین
+    این مکانیزم جایگزینِ فایل‌های بزرگِ Wallet/Ledger نیست، فقط یه لایه‌ی
+    ترمیمِ تکمیلیه؛ معماریِ چندفایلیِ فعلی دست‌نخورده می‌مونه."""
+    host = _host()
+    entries = []
+    try:
+        if os.path.exists(WALLET_JOURNAL_FILE):
+            with open(WALLET_JOURNAL_FILE, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        # خطِ آخر احتمالاً وسطِ نوشتن کرش کرده (fsync نیمه‌کاره
+                        # نداریم چون fsync atomic نیست ولی نوشتنِ متن قبلش
+                        # ممکنه قطع شده باشه) - نادیده بگیر، بی‌خطره.
+                        continue
+    except Exception as e:
+        logger.warning(f"خوندنِ Wallet Journal برای Reconciliation ناموفق بود: {e}")
+        return {"recovered_ledger_entries": 0, "corrected_wallets": 0}
+
+    recovered = 0
+    last_balance: dict[tuple[int, int], int] = {}
+    for entry in entries:
+        try:
+            chat_id = int(entry["chat_id"])
+            uid = int(entry["uid"])
+            txn_id = entry["txn_id"]
+            wallet_after = int(entry["wallet_after"])
+            record = entry.get("record")
+        except Exception:
+            continue
+
+        if record and txn_id not in _ledger:
+            _ledger[txn_id] = record
+            if txn_id not in _ledger_order:
+                _ledger_order.append(txn_id)
+            lst = _ledger_by_user[chat_id][uid]
+            if txn_id not in lst:
+                lst.append(txn_id)
+            idem_key = record.get("idempotency_key")
+            if idem_key:
+                _idempotency_mark(idem_key, txn_id, record.get("status", TXN_COMPLETED))
+            recovered += 1
+
+        last_balance[(chat_id, uid)] = wallet_after
+
+    corrected = 0
+    for (chat_id, uid), expected in last_balance.items():
+        actual = host._wallet[chat_id].get(uid, 0)
+        if actual != expected:
+            logger.warning(
+                f"Wallet Journal Reconciliation: ناهماهنگیِ کیف‌پول پیدا شد "
+                f"(chat={chat_id} uid={uid}): فایل={actual}، طبقِ Journal باید "
+                f"{expected} باشه؛ اصلاح شد (بدونِ اجرای دوبارهٔ هیچ تراکنشی)."
+            )
+            host._wallet[chat_id][uid] = expected
+            corrected += 1
+
+    if recovered or corrected:
+        logger.warning(
+            f"Wallet Journal Reconciliation تکمیل شد: {recovered} رکوردِ Ledger "
+            f"از Journal بازسازی شد، {corrected} موجودیِ کیف‌پول اصلاح شد."
+        )
+    return {"recovered_ledger_entries": recovered, "corrected_wallets": corrected}
+
+
 # ---------------------------------------------------------------------------
 # 🧾 Ledger — Wrapper روی economy_engine (که Transaction History رو نگه می‌داره)
 # ---------------------------------------------------------------------------
@@ -350,10 +605,7 @@ def create_transaction(chat_id: int, user_id: int, type_: str, amount: int, *,
     از داخل خودشون این تابع رو صدا می‌زنن. اگه idempotency_key تکراری باشه و
     قبلاً یک تراکنش COMPLETED با همون کلید ثبت شده باشه، DuplicateTransactionError
     می‌زنه (فراخوان باید قبل از اعمال مجدد مقدار، این خطا رو چک کنه)."""
-    if idempotency_key:
-        existing = _idempotency_index.get(idempotency_key)
-        if existing and existing in _ledger and _ledger[existing]["status"] == TXN_COMPLETED:
-            raise DuplicateTransactionError(existing)
+    _idempotency_check(idempotency_key)
 
     txn_id = uuid.uuid4().hex
     record = {
@@ -373,8 +625,7 @@ def create_transaction(chat_id: int, user_id: int, type_: str, amount: int, *,
     _ledger[txn_id] = record
     _ledger_order.append(txn_id)
     _ledger_by_user[chat_id][user_id].append(txn_id)
-    if idempotency_key:
-        _idempotency_index[idempotency_key] = txn_id
+    _idempotency_mark(idempotency_key, txn_id, TXN_COMPLETED)
 
     # هرس کردن قدیمی‌ترین رکوردها اگه از سقف رد شدیم (جلوگیری از رشد بی‌نهایت)
     while len(_ledger_order) > MAX_LEDGER_SIZE:
@@ -429,32 +680,59 @@ async def rollback_transaction(transaction_id: str, reason: str = "") -> dict:
     """یک تراکنش COMPLETED رو برمی‌گردونه (اثر مالی‌شو خنثی می‌کنه) و
     خودش رو ROLLED_BACK علامت می‌زنه. یک رکورد جدید هم برای خودِ رول‌بک
     توی Ledger ثبت می‌شه (قابل حسابرسی). رول‌بک روی چیزی که قبلاً رول‌بک
-    شده RollbackError می‌زنه."""
-    record = _ledger.get(transaction_id)
-    if record is None:
-        raise TransactionNotFoundError(f"تراکنشی با شناسه‌ی {transaction_id} پیدا نشد.")
-    if record["status"] != TXN_COMPLETED:
-        raise RollbackError(f"تراکنش {transaction_id} در وضعیت {record['status']} است و قابل رول‌بک نیست.")
+    شده RollbackError می‌زنه.
 
-    chat_id, uid, amount = record["chat_id"], record["user_id"], record["amount"]
-    ttype = record["type"]
+    فیکس (آدیتِ دوم - مسئله‌ی ۱ - محافظت در برابر رول‌بکِ هم‌زمان):
+    قبلاً خواندنِ status=='COMPLETED' و نوشتنِ status='ROLLED_BACK' دو
+    عملیاتِ جدا بودن با یک await (اثرِ مالی) وسطشون - یعنی اگه همین تابع
+    برای یک transaction_id دوبار هم‌زمان صدا زده بشه، هر دو می‌تونستن
+    status رو COMPLETED ببینن و هر دو اثرِ مالی رو خنثی کنن (پول اضافه
+    برگردونده بشه). الان کل زنجیره‌ی «چک وضعیت -> اعمالِ اثرِ معکوس -> ثبتِ
+    وضعیتِ جدید» زیرِ یک قفلِ اختصاصیِ همون transaction_id قفل می‌شه
+    (_rollback_lock_for) - مستقل از اینکه رسیدنِ await به یه تعلیقِ واقعی
+    منجر بشه یا نه (یعنی حتی اگه بعداً داخلِ remove_coins/add_coins یه I/O
+    واقعی اضافه بشه، این قفل هنوزم درست کار می‌کنه - به جزییاتِ پیاده‌سازیِ
+    فعلیِ asyncio.Lock وابسته نیست).
 
-    # اثر مالی معکوس رو اعمال کن. برای TRANSFER، دو طرف هر دو رکورد جدا دارن
-    # (یکی منفی برای فرستنده، یکی مثبت برای گیرنده)؛ رول‌بک هرکدوم فقط سهم
-    # همون رکورد رو برمی‌گردونه، نه کل تراکنش دو طرفه رو.
-    if amount > 0:
-        await remove_coins(chat_id, uid, amount, kind="OTHER",
-                            note=f"رول‌بک {transaction_id}: {reason}", allow_bank=True, bypass_freeze=True)
-    elif amount < 0:
-        await add_coins(chat_id, uid, -amount, kind="OTHER",
-                         note=f"رول‌بک {transaction_id}: {reason}", bypass_freeze=True)
+    اگه اعمالِ اثرِ معکوس (remove_coins/add_coins) شکست بخوره (مثلاً
+    InsufficientFundsError چون کاربر از قبل پول رو خرج کرده)، status
+    همونجوری COMPLETED می‌مونه - یعنی رول‌بک هنوز «قابل تلاشِ دوباره»ست،
+    نه یه حالتِ نصفه‌ونیمه‌ی گمشده."""
+    lock = _rollback_lock_for(transaction_id)
+    async with lock:
+        record = _ledger.get(transaction_id)
+        if record is None:
+            raise TransactionNotFoundError(f"تراکنشی با شناسه‌ی {transaction_id} پیدا نشد.")
+        if record["status"] != TXN_COMPLETED:
+            raise RollbackError(f"تراکنش {transaction_id} در وضعیت {record['status']} است و قابل رول‌بک نیست.")
 
-    record["status"] = TXN_ROLLED_BACK
-    create_transaction(chat_id, uid, "OTHER", -amount if amount else 0,
-                        source="rollback",
-                        metadata={"rolled_back_transaction_id": transaction_id, "reason": reason,
-                                  "original_type": ttype})
-    return record
+        chat_id, uid, amount = record["chat_id"], record["user_id"], record["amount"]
+        ttype = record["type"]
+
+        # اثر مالی معکوس رو اعمال کن. برای TRANSFER، دو طرف هر دو رکورد جدا دارن
+        # (یکی منفی برای فرستنده، یکی مثبت برای گیرنده)؛ رول‌بک هرکدوم فقط سهم
+        # همون رکورد رو برمی‌گردونه، نه کل تراکنش دو طرفه رو.
+        # توجه: اگه این await خطا بده (مثلاً موجودی کافی برای پس‌گرفتن نیست)،
+        # status هنوز COMPLETEDه (پایین‌تر عوض می‌شه)، پس Exception بالا
+        # می‌ره و هیچ تغییرِ نصفه‌ونیمه‌ای توی status/Ledger ثبت نمی‌شه.
+        if amount > 0:
+            await remove_coins(chat_id, uid, amount, kind="OTHER",
+                                note=f"رول‌بک {transaction_id}: {reason}", allow_bank=True, bypass_freeze=True)
+        elif amount < 0:
+            await add_coins(chat_id, uid, -amount, kind="OTHER",
+                             note=f"رول‌بک {transaction_id}: {reason}", bypass_freeze=True)
+
+        record["status"] = TXN_ROLLED_BACK
+        # اگه خودِ تراکنشِ اصلی یه idempotency_key داشته (مثلاً یه Achievement
+        # Reward)، باید ایندکس رو هم هم‌زمان با status خودِ رکورد به‌روز کنیم -
+        # وگرنه _idempotency_check هنوزم اون کلید رو COMPLETED می‌بینه و یه
+        # اعطای دوباره‌ی همون جایزه (بعد از رول‌بک) رو اشتباهاً مسدود می‌کنه.
+        _idempotency_mark(record.get("idempotency_key"), transaction_id, TXN_ROLLED_BACK)
+        create_transaction(chat_id, uid, "OTHER", -amount if amount else 0,
+                            source="rollback",
+                            metadata={"rolled_back_transaction_id": transaction_id, "reason": reason,
+                                      "original_type": ttype})
+        return record
 
 
 async def admin_set_balance(chat_id: int, uid: int, new_amount: int, note: str = "",
@@ -470,8 +748,9 @@ async def admin_set_balance(chat_id: int, uid: int, new_amount: int, note: str =
         delta = new_amount - current
         host._wallet[chat_id][uid] = new_amount
         if delta:
-            record_transaction(chat_id, uid, "OTHER", delta,
-                                note=note or f"admin_set_balance by {admin_id}")
+            record = record_transaction(chat_id, uid, "OTHER", delta,
+                                         note=note or f"admin_set_balance by {admin_id}")
+            _journal_append(chat_id, uid, record["transaction_id"], new_amount, record)
         return new_amount
 
 
@@ -487,8 +766,9 @@ async def admin_adjust_balance(chat_id: int, uid: int, delta: int, note: str = "
         applied = new_amount - current
         host._wallet[chat_id][uid] = new_amount
         if applied:
-            record_transaction(chat_id, uid, "OTHER", applied,
-                                note=note or f"admin_adjust_balance by {admin_id}")
+            record = record_transaction(chat_id, uid, "OTHER", applied,
+                                         note=note or f"admin_adjust_balance by {admin_id}")
+            _journal_append(chat_id, uid, record["transaction_id"], new_amount, record)
         return new_amount
 
 
@@ -569,13 +849,43 @@ async def add_coins(chat_id: int, uid: int, amount: int, kind: str = "misc",
         raise EconomyFrozenError("اقتصاد این گروه فعلاً فریزه.")
     host = _host()
     async with _lock_for(chat_id, uid):
-        if idempotency_key:
-            existing = _idempotency_index.get(idempotency_key)
-            if existing and existing in _ledger and _ledger[existing]["status"] == TXN_COMPLETED:
-                raise DuplicateTransactionError(existing)
+        _idempotency_check(idempotency_key)
         host._wallet[chat_id][uid] += amount
-        record_transaction(chat_id, uid, kind, amount, counterparty_id, note, idempotency_key)
+        record = record_transaction(chat_id, uid, kind, amount, counterparty_id, note, idempotency_key)
         new_balance = host._wallet[chat_id][uid]
+        _journal_append(chat_id, uid, record["transaction_id"], new_balance, record)
+    return new_balance
+
+
+def add_coins_sync(chat_id: int, uid: int, amount: int, kind: str = "misc",
+                    note: str = "", counterparty_id: int | None = None,
+                    idempotency_key: str | None = None, bypass_freeze: bool = False) -> int:
+    """نسخه‌ی Sync از add_coins — برای مسیرهایی که از قبل sync بودن و تبدیل‌شون
+    به async زنجیره‌ی بزرگی از تابع‌های بالادستیِ غیرمرتبط رو async می‌کرد
+    (profile_engine.grant_rewards_for_unlocked و زنجیره‌ی ~۲۰ فراخوان‌کننده‌ی
+    economy_achievements.check_all، و poll_engine._grant_vote_reward). این دقیقاً
+    همون قانون معماری رو برآورده می‌کنه («هیچ Module خارجی‌ای مستقیم به
+    host._wallet دست نزنه») بدون اینکه امضای توابع فعلی رو بشکنه.
+
+    ایمنیِ Race Condition: asyncio تک‌رشته‌ایه و فقط سرِ یه `await` سوییچ Task
+    می‌کنه. این تابع هیچ `await` ای نداره، پس از لحظه‌ی شروع تا پایانش
+    به‌صورت یکپارچه (atomic) اجرا می‌شه — هیچ Task دیگه‌ای نمی‌تونه مثلاً بینِ
+    خوندن و نوشتنِ moجودی وسطش بپره. این دقیقاً همون ضمانتی هست که
+    `_lock_for` به نسخه‌ی async می‌ده (که داخلش هم هیچ await ای بینِ قفل‌گرفتن
+    و آزادکردن نیست). **هشدار:** این تابع رو هرگز از داخل Thread/Executor
+    (asyncio.to_thread و مشابه) صدا نزن — فقط از مسیر اصلی Event Loop."""
+    if amount < 0:
+        raise ValueError("add_coins_sync فقط مقدار غیرمنفی می‌گیره؛ برای کم‌کردن از remove_coins استفاده کن.")
+    if amount == 0:
+        return get_wallet(chat_id, uid)
+    if is_frozen(chat_id) and not bypass_freeze:
+        raise EconomyFrozenError("اقتصاد این گروه فعلاً فریزه.")
+    _idempotency_check(idempotency_key)
+    host = _host()
+    host._wallet[chat_id][uid] += amount
+    record = record_transaction(chat_id, uid, kind, amount, counterparty_id, note, idempotency_key)
+    new_balance = host._wallet[chat_id][uid]
+    _journal_append(chat_id, uid, record["transaction_id"], new_balance, record)
     return new_balance
 
 
@@ -597,8 +907,10 @@ async def remove_coins(chat_id: int, uid: int, amount: int, kind: str = "misc",
         wallet_bal = host._wallet[chat_id].get(uid, 0)
         if wallet_bal >= amount:
             host._wallet[chat_id][uid] = wallet_bal - amount
-            record_transaction(chat_id, uid, kind, -amount, counterparty_id, note)
-            return host._wallet[chat_id][uid]
+            record = record_transaction(chat_id, uid, kind, -amount, counterparty_id, note)
+            new_balance = host._wallet[chat_id][uid]
+            _journal_append(chat_id, uid, record["transaction_id"], new_balance, record)
+            return new_balance
 
         if not allow_bank:
             raise InsufficientFundsError(
@@ -613,8 +925,10 @@ async def remove_coins(chat_id: int, uid: int, amount: int, kind: str = "misc",
             )
         host._wallet[chat_id][uid] = 0
         _bank[chat_id][uid] = bank_bal - remainder
-        record_transaction(chat_id, uid, kind, -amount, counterparty_id, note)
-        return host._wallet[chat_id][uid]
+        record = record_transaction(chat_id, uid, kind, -amount, counterparty_id, note)
+        new_balance = host._wallet[chat_id][uid]
+        _journal_append(chat_id, uid, record["transaction_id"], new_balance, record)
+        return new_balance
 
 
 async def transfer_coins(chat_id: int, from_uid: int, to_uid: int, amount: int,
@@ -638,8 +952,12 @@ async def transfer_coins(chat_id: int, from_uid: int, to_uid: int, amount: int,
                 raise InsufficientFundsError(f"موجودی کافی نیست: {balance} < {amount}")
             host._wallet[chat_id][from_uid] = balance - amount
             host._wallet[chat_id][to_uid] = host._wallet[chat_id].get(to_uid, 0) + amount
-            record_transaction(chat_id, from_uid, kind, -amount, to_uid, note)
-            record_transaction(chat_id, to_uid, kind, amount, from_uid, note)
+            rec_from = record_transaction(chat_id, from_uid, kind, -amount, to_uid, note)
+            rec_to = record_transaction(chat_id, to_uid, kind, amount, from_uid, note)
+            _journal_append(chat_id, from_uid, rec_from["transaction_id"],
+                             host._wallet[chat_id][from_uid], rec_from)
+            _journal_append(chat_id, to_uid, rec_to["transaction_id"],
+                             host._wallet[chat_id][to_uid], rec_to)
 
 
 # ---------------------------------------------------------------------------
@@ -658,7 +976,8 @@ async def deposit(chat_id: int, uid: int, amount: int, note: str = "") -> int:
         host._wallet[chat_id][uid] = wallet_bal - amount
         _bank[chat_id][uid] = _bank[chat_id].get(uid, 0) + amount
         _total_deposited[chat_id][uid] += amount
-        record_transaction(chat_id, uid, "deposit", -amount, note=note or "سپرده به بانک")
+        record = record_transaction(chat_id, uid, "deposit", -amount, note=note or "سپرده به بانک")
+        _journal_append(chat_id, uid, record["transaction_id"], host._wallet[chat_id][uid], record)
         return _bank[chat_id][uid]
 
 
@@ -674,7 +993,8 @@ async def withdraw(chat_id: int, uid: int, amount: int, note: str = "") -> int:
         _bank[chat_id][uid] = bank_bal - amount
         host._wallet[chat_id][uid] = host._wallet[chat_id].get(uid, 0) + amount
         _total_withdrawn[chat_id][uid] += amount
-        record_transaction(chat_id, uid, "withdraw", amount, note=note or "برداشت از بانک")
+        record = record_transaction(chat_id, uid, "withdraw", amount, note=note or "برداشت از بانک")
+        _journal_append(chat_id, uid, record["transaction_id"], host._wallet[chat_id][uid], record)
         return host._wallet[chat_id][uid]
 
 
