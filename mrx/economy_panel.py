@@ -61,6 +61,8 @@ import economy_theft
 import economy_achievements
 import economy_missions
 import economy_macro
+import economy_stock
+import economy_auction
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +156,8 @@ CATEGORIES: dict[str, dict] = {
         "items": [
             ("🏦 بانک (سپرده/برداشت/سود)", "sec", "bank"),
             ("📈 بازار و ترید", "sec", "market"),
+            ("🏢 بورس سهام شرکت‌ها", "sec", "stock"),
+            ("🔨 مزایده‌ها", "sec", "auction"),
         ],
     },
     "shop": {
@@ -1199,6 +1203,27 @@ async def _render_macro(chat_id: int, uid: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 🏢 بورسِ سهامِ شرکت‌ها (فاز ۳ V18) — نمایشی؛ خرید/فروش/IPO با دستورِ متنی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_stock(chat_id: int, uid: int):
+    text = economy_stock.format_exchange_text(chat_id) + "\n\n" + economy_stock.format_portfolio_text(chat_id, uid)
+    rows = [_back_row("stock")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🔨 مزایده‌ها (فاز ۳ V18) — نمایشی؛ ایجاد/پیشنهاد با دستورِ متنی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_auction(chat_id: int, uid: int):
+    active_text = await economy_auction.format_active_text(chat_id)
+    mine_text = economy_auction.format_my_auctions_text(chat_id, uid)
+    rows = [_back_row("auction")]
+    return active_text + "\n\n" + mine_text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 🔀 جدول بخش‌ها
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1222,12 +1247,16 @@ _SECTION_RENDERERS = {
     "theft": _render_theft,
     "lb": _render_leaderboard,
     "macro": _render_macro,
+    "stock": _render_stock,
+    "auction": _render_auction,
 }
 
 _SECTION_MODULE_KEY = {
     "bank": "economy_module_bank",
     "jobs": "economy_module_jobs",
     "market": "economy_module_market",
+    "stock": "economy_module_stock",
+    "auction": "economy_module_auction",
     "prop": "economy_module_property",
     "city": "economy_module_city",
     "district": "economy_module_district",

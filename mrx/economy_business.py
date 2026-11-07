@@ -190,8 +190,17 @@ def _simulate_period(chat_id: int, b: dict, elapsed_hours: float) -> tuple[float
 async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
     """سود/زیان از آخرین Collect رو تسویه می‌کنه. برمی‌گردونه (net, employees_fired).
     اگه موجودی کاربر برای هزینه‌ها کافی نباشه، به‌جای منفی‌شدن، کسب‌وکار وارد
-    بحران می‌شه (طبق Negative-Balance Protection پروژه)."""
+    بحران می‌شه (طبق Negative-Balance Protection پروژه) - زیانِ تأمین‌نشده
+    به «بدهی» تبدیل می‌شه (نه گم می‌شه، نه کیفِ‌پول رو منفی می‌کنه).
+
+    فاز ۴ V18: اگه کسب‌وکار از قبل ورشکسته (Frozen) باشه، هیچ درآمد/هزینه‌ای
+    حساب نمی‌شه - فقط last_collect_ts جلو می‌ره تا زمانِ غیابش روی بدهیِ
+    قبلی اثر نذاره. باید اول با «پرداخت بدهی» رفعِ ورشکستگی بشه."""
     now = time.time()
+    if b.get("bankrupt"):
+        b["last_collect_ts"] = now
+        return 0, 0
+
     elapsed_h = (now - b["last_collect_ts"]) / 3600.0
     if elapsed_h <= 0:
         return 0, 0
@@ -202,14 +211,13 @@ async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
     b["lifetime_expense"] = b.get("lifetime_expense", 0) + expense
 
     net = round(revenue - expense)
-    employees_fired = 0
     if net >= 0:
         if net > 0:
             await economy_core.add_coins(chat_id, uid, net, kind="BUSINESS",
                                           note=f"سود {TYPES[b['type']]['name']} #{b['id']}")
         return net, 0
 
-    # net منفیه: سعی کن از موجودی کاربر کم کنی؛ اگه نشد، بحران
+    # net منفیه: سعی کن از موجودی کاربر کم کنی؛ اگه نشد، یه Strike بخوره
     try:
         await economy_core.remove_coins(chat_id, uid, -net, kind="BUSINESS",
                                          note=f"زیان {TYPES[b['type']]['name']} #{b['id']}")
@@ -218,7 +226,25 @@ async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
         employees_fired = b["employees"]
         b["employees"] = 0
         b["price_mult"] = 1.0
-        _log_history(b, "OTHER", f"بحران مالی: {employees_fired} کارمند اخراج شد (موجودی برای هزینه‌ها کافی نبود)")
+        b["debt"] = b.get("debt", 0) + (-net)
+        b["crisis_strikes"] = b.get("crisis_strikes", 0) + 1
+
+        strikes_limit = getattr(config, "BUSINESS_BANKRUPTCY_STRIKES", 3)
+        if b["crisis_strikes"] >= strikes_limit:
+            b["bankrupt"] = True
+            _log_history(
+                b, "OTHER",
+                f"🚫 ورشکستگی: بعد از {b['crisis_strikes']} بار پیاپی ناتوانی در پرداختِ هزینه، "
+                f"کسب‌وکار Frozen شد. بدهیِ کل: {b['debt']:,}. با «پرداخت بدهی» دوباره فعالش کن."
+            )
+        else:
+            remaining = strikes_limit - b["crisis_strikes"]
+            _log_history(
+                b, "OTHER",
+                f"⚠️ هشدارِ بحرانِ مالی ({b['crisis_strikes']}/{strikes_limit}): موجودی برای هزینه‌ها "
+                f"کافی نبود، {employees_fired} کارمند اخراج شد، {-net:,} به بدهی اضافه شد. "
+                f"{remaining} بارِ دیگه تا ورشکستگیِ کامل مونده."
+            )
         return 0, employees_fired
 
 
@@ -304,6 +330,7 @@ async def buy_business_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "inventory": 0, "price_mult": 1.0, "ad_until": None,
         "last_collect_ts": now, "last_tax_ts": now, "purchased_ts": now,
         "lifetime_revenue": 0, "lifetime_expense": 0, "history": [],
+        "debt": 0, "crisis_strikes": 0, "bankrupt": False,  # فاز ۴ V18 — سیستمِ ورشکستگی
     }
     _log_history(b, "BUSINESS", f"خرید نو به قیمت {price:,}")
     owned(chat.id, uid).append(b)
@@ -364,6 +391,9 @@ async def hire_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not target:
         await message.reply_text("استفاده: «استخدام [شناسه]»")
         return
+    if target.get("bankrupt"):
+        await message.reply_text("❌ این کسب‌وکار ورشکسته و Frozen‌ـه. اول با «پرداخت بدهی» رفعش کن.")
+        return
     info = TYPES[target["type"]]
     if target["employees"] >= info["max_employees"]:
         await message.reply_text(f"❌ ظرفیت کارمند پر شده (حداکثر {info['max_employees']} نفر).")
@@ -422,6 +452,9 @@ async def buy_inventory_command(update: Update, context: ContextTypes.DEFAULT_TY
     if not target:
         await message.reply_text("همچین کسب‌وکاری توی مالکیتت نیست.")
         return
+    if target.get("bankrupt"):
+        await message.reply_text("❌ این کسب‌وکار ورشکسته و Frozen‌ـه. اول با «پرداخت بدهی» رفعش کن.")
+        return
     try:
         qty = int(args[1])
     except ValueError:
@@ -436,12 +469,33 @@ async def buy_inventory_command(update: Update, context: ContextTypes.DEFAULT_TY
         await message.reply_text("❌ انبار پره.")
         return
     qty = min(qty, room)
-    cost = round(qty * info["inventory_cost_per_unit"])
+
+    # فاز ۴ V18: برایِ کسب‌وکارهایی که موجودی‌شون کالایِ واقعیِ قابلِ‌معامله‌ست،
+    # قیمت از economy_supply (زنده، بر اساسِ عرضه/تقاضایِ واقعی) میاد - نه
+    # قیمتِ ثابتِ config. خودِ خرید هم واقعاً روی تقاضای اون کالا اثر می‌ذاره.
+    commodity_key = getattr(config, "BUSINESS_COMMODITY_MAP", {}).get(target["type"])
+    unit_price = info["inventory_cost_per_unit"]
+    if commodity_key:
+        try:
+            import economy_supply
+            unit_price = economy_supply.get_price(chat.id, commodity_key)
+        except Exception as e:
+            logger.warning(f"خوندنِ قیمتِ زنده‌ی {commodity_key} ناموفق بود، از قیمتِ ثابت استفاده شد: {e}")
+
+    cost = round(qty * unit_price)
     try:
         await economy_core.remove_coins(chat.id, uid, cost, kind="OTHER", note="خرید موجودی")
     except economy_core.InsufficientFundsError:
         await message.reply_text(f"❌ موجودی کافی نیست. هزینه‌ی {qty} واحد: {cost:,} {config.CURRENCY_NAME}")
         return
+
+    if commodity_key:
+        try:
+            import economy_supply
+            economy_supply.record_demand(chat.id, commodity_key, qty)
+        except Exception as e:
+            logger.warning(f"ثبتِ تقاضا برایِ {commodity_key} ناموفق بود: {e}")
+
     target["inventory"] += qty
     _log_history(target, "BUSINESS", f"خرید {qty} واحد موجودی به هزینه‌ی {cost:,}")
     await message.reply_text(
@@ -465,6 +519,9 @@ async def set_price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = _find_owned(chat.id, uid, args)
     if not target:
         await message.reply_text("همچین کسب‌وکاری توی مالکیتت نیست.")
+        return
+    if target.get("bankrupt"):
+        await message.reply_text("❌ این کسب‌وکار ورشکسته و Frozen‌ـه. اول با «پرداخت بدهی» رفعش کن.")
         return
     try:
         mult = float(args[1])
@@ -495,6 +552,9 @@ async def advertise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not target:
         await message.reply_text("استفاده: «تبلیغات [شناسه]»")
         return
+    if target.get("bankrupt"):
+        await message.reply_text("❌ این کسب‌وکار ورشکسته و Frozen‌ـه. اول با «پرداخت بدهی» رفعش کن.")
+        return
     cost = round(TYPES[target["type"]]["base_price"] * getattr(config, "BUSINESS_AD_COST_FRACTION", 0.05))
     try:
         await economy_core.remove_coins(chat.id, uid, cost, kind="OTHER", note="کمپین تبلیغاتی")
@@ -520,6 +580,9 @@ async def upgrade_business_command(update: Update, context: ContextTypes.DEFAULT
     target = _find_owned(chat.id, uid, context.args or [])
     if not target:
         await message.reply_text("استفاده: «ارتقای کسب‌وکار [شناسه]»")
+        return
+    if target.get("bankrupt"):
+        await message.reply_text("❌ این کسب‌وکار ورشکسته و Frozen‌ـه. اول با «پرداخت بدهی» رفعش کن.")
         return
     cost = upgrade_cost(target)
     try:
@@ -571,6 +634,61 @@ async def pay_business_tax_command(update: Update, context: ContextTypes.DEFAULT
 # 📋 نمایش / داشبورد سود-زیان
 # ---------------------------------------------------------------------------
 
+async def pay_debt_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پرداخت بدهی [شناسه] [مبلغ] / /paydebt <id> <amount> — فاز ۴ V18.
+    بدهیِ کسب‌وکار (حاصلِ زیانِ تأمین‌نشده) رو کم می‌کنه؛ اگه بدهی صفر بشه،
+    کسب‌وکارِ ورشکسته دوباره فعال (Unfreeze) می‌شه."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await message.reply_text("استفاده: «پرداخت بدهی [شناسه] [مبلغ]»")
+        return
+    uid = update.effective_user.id
+    target = _find_owned(chat.id, uid, args)
+    if not target:
+        await message.reply_text("همچین کسب‌وکاری توی مالکیتت نیست.")
+        return
+    debt = target.get("debt", 0)
+    if debt <= 0:
+        await message.reply_text("این کسب‌وکار هیچ بدهی‌ای نداره.")
+        return
+    try:
+        amount = int(args[1].replace(",", ""))
+    except ValueError:
+        await message.reply_text("مبلغ نامعتبره.")
+        return
+    if amount <= 0:
+        await message.reply_text("مبلغ باید مثبت باشه.")
+        return
+    amount = min(amount, debt)
+    try:
+        await economy_core.remove_coins(chat.id, uid, amount, kind="OTHER",
+                                         note=f"پرداختِ بدهیِ {TYPES[target['type']]['name']} #{target['id']}")
+    except economy_core.InsufficientFundsError:
+        await message.reply_text(f"❌ موجودی کافی نیست. مبلغِ موردنیاز: {amount:,} {config.CURRENCY_NAME}")
+        return
+
+    target["debt"] = debt - amount
+    lines = [f"✅ {amount:,} {config.CURRENCY_NAME} از بدهی پرداخت شد. بدهیِ باقی‌مونده: {target['debt']:,}"]
+    if target["debt"] <= 0:
+        target["debt"] = 0
+        target["crisis_strikes"] = 0
+        was_bankrupt = target.get("bankrupt", False)
+        target["bankrupt"] = False
+        target["last_collect_ts"] = time.time()  # از الان دوباره فعاله، نه از قبلِ ورشکستگی
+        if was_bankrupt:
+            _log_history(target, "OTHER", "✅ بدهی کامل پرداخت شد؛ کسب‌وکار دوباره فعال شد.")
+            lines.append("🎉 کسب‌وکار دیگه ورشکسته نیست و دوباره فعاله!")
+    else:
+        _log_history(target, "OTHER", f"پرداختِ جزئیِ بدهی: {amount:,} (باقی‌مونده: {target['debt']:,})")
+    await message.reply_text("\n".join(lines))
+    await host.save_state()
+
+
 async def my_business_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """کسب‌وکار من [شناسه] — بدون شناسه: لیست + جمع‌آوری سود همه‌شون.
     با شناسه: فقط تسویه‌ی همون یکی."""
@@ -605,13 +723,20 @@ async def my_business_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     lines = ["🏢 کسب‌وکارهای تو:", ""]
     for b in bs:
         info = TYPES[b["type"]]
+        if b.get("bankrupt"):
+            lines.append(
+                f"#{b['id']} {info['name']} Lv{b['level']} — 🚫 ورشکسته (Frozen) — "
+                f"بدهی: {b.get('debt', 0):,} — با «پرداخت بدهی {b['id']} [مبلغ]» فعالش کن"
+            )
+            continue
         due = tax_due(b)
         tax_note = f" — ⚠️مالیات: {due:,}" if due > 0 else ""
+        debt_note = f" — ⚠️بدهی: {b.get('debt', 0):,}" if b.get("debt", 0) > 0 else ""
         ad_badge = "📢" if _is_ad_active(b) else ""
         lines.append(
             f"#{b['id']} {info['name']} Lv{b['level']} {ad_badge} — کارمند: {b['employees']}/{info['max_employees']} — "
             f"موجودی: {b['inventory']}/{info['inventory_capacity']} — قیمت: ×{b['price_mult']} — "
-            f"درآمد: {round(hourly_revenue(chat.id, b))}‎/h — هزینه: {round(hourly_expense(b))}‎/h{tax_note}"
+            f"درآمد: {round(hourly_revenue(chat.id, b))}‎/h — هزینه: {round(hourly_expense(b))}‎/h{tax_note}{debt_note}"
         )
     lines.append("")
     if total_net > 0:

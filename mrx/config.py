@@ -674,6 +674,8 @@ DEFAULT_SETTINGS = {
     "economy_module_district": True,
     "economy_module_vehicle": True,
     "economy_module_business": True,
+    "economy_module_stock": True,
+    "economy_module_auction": True,
     "economy_module_clothing": True,
     "economy_module_marriage": True,
     "economy_module_pet": True,
@@ -2301,6 +2303,8 @@ ECONOMY_MODULE_TOGGLES = {
     "economy_module_district":    "🗺️ منطقه‌های شهر",
     "economy_module_vehicle":     "🚗 خودرو",
     "economy_module_business":    "🏢 کسب‌وکار",
+    "economy_module_stock":       "📊 بورس سهام شرکت‌ها",
+    "economy_module_auction":     "🔨 مزایده و حراج",
     "economy_module_clothing":    "👔 لباس",
     "economy_module_marriage":    "💍 ازدواج",
     "economy_module_pet":         "🐾 پت",
@@ -2408,3 +2412,67 @@ MACRO_RECESSION_GROWTH_THRESHOLD = -0.08  # افتِ بیش از ۸٪ = رکود
 
 # نرخِ تورمِ هدف (برای شاخصِ اعتمادِ مصرف‌کننده - هرچی تورمِ واقعی ازش دورتر باشه، اعتماد کمتره)
 MACRO_TARGET_INFLATION_RATE = 0.02
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🏢 DIGNANTI V18 — بورسِ سهامِ شرکت‌ها (فاز ۳: بازار سرمایه)
+# برخلافِ economy_market.py (دارایی‌های انتزاعی مثلِ BTC/GOLD با Random Walk)،
+# این بخش سهامِ شرکت‌های *واقعیِ* بازیکن‌ها (از economy_business.py) رو قابلِ
+# معامله می‌کنه؛ قیمت از ارزشِ واقعیِ کسب‌وکار (Fundamental) + فشارِ معامله
+# تأثیر می‌گیره، نه از روی هیچ عددِ تصادفیِ بی‌ربط.
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_STOCK_STATE_FILE = "economy_stock_state.json"
+
+STOCK_IPO_MIN_VALUE = 5000             # حداقل current_value کسب‌وکار برای واجدِ‌شرایط‌بودنِ IPO
+STOCK_TOTAL_SHARES = 1000              # تعدادِ کلِ سهامِ هر شرکت در IPO
+STOCK_FOUNDER_RETAIN_FRACTION = 0.65   # سهمی که مالکِ بنیان‌گذار نگه می‌داره؛ بقیه می‌ره توی بازار
+STOCK_TRADING_FEE_PERCENT = 0.015      # کارمزدِ هر معامله‌ی خرید/فروشِ سهام
+STOCK_MAX_IMPACT_PER_TRADE = 0.10      # سقفِ اثرِ هر معامله روی قیمت (ضدِ دستکاریِ قیمت با یه معامله‌ی بزرگ)
+STOCK_LIQUIDITY_MULT = 8               # نقدینگی = ارزشِ‌بازارِ شرکت × این ضریب
+STOCK_REPRICE_INTERVAL_SECONDS = 900   # هر ۱۵ دقیقه‌ی واقعی قیمت به‌سمتِ ارزشِ بنیادیِ کسب‌وکار گرایش پیدا می‌کنه
+STOCK_REPRICE_MAX_CHANGE = 0.08        # حداکثر حرکت به‌سمتِ ارزشِ بنیادی در هر Reprice (ضدِ نوسانِ ناگهانی)
+STOCK_DIVIDEND_MIN_INTERVAL_HOURS = 24 # هر چند ساعت یه‌بار می‌شه سودِ شرکت رو تقسیم کرد
+STOCK_PRICE_HISTORY_LEN = 30
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🔨 DIGNANTI V18 — مزایده و حراج اقتصادی (ادامه‌ی فاز ۳: بازار سرمایه)
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_AUCTION_STATE_FILE = "economy_auction_state.json"
+
+# انواعِ دارایی‌ای که فعلاً می‌شه مزایده کرد (طبقِ Adapterهای پیاده‌شده در
+# economy_auction.py). کالا/سهام در فازهای بعدی اضافه می‌شن.
+AUCTION_ASSET_TYPES = {"property", "vehicle", "business"}
+
+AUCTION_MIN_DURATION_MINUTES = 10
+AUCTION_MAX_DURATION_MINUTES = 1440          # حداکثر ۲۴ ساعت
+AUCTION_MIN_BID_INCREMENT_PERCENT = 0.05     # هر پیشنهادِ جدید باید حداقل ۵٪ از قبلی بیشتر باشه
+AUCTION_MAX_ACTIVE_PER_USER = 3              # هر کاربر حداکثر همزمان ۳ آیتم توی مزایده داشته باشه
+AUCTION_SWEEP_LOOKBACK_LIMIT = 500           # سقفِ ایمنیِ تعدادِ مزایده‌ای که در هر Sweep چک می‌شه
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🏭 DIGNANTI V18 — فاز ۴ (توسعه‌ی کسب‌وکار): موادِ اولیه + ورشکستگی
+# ═══════════════════════════════════════════════════════════════════════════
+
+# هر نوع کسب‌وکاری که موجودی‌اش عملاً «کالای خامِ» قابلِ معامله در بازارِ
+# عرضه/تقاضا (economy_supply) باشه اینجا Map می‌شه؛ خریدِ موجودی برایِ این
+# نوع‌ها دیگه قیمتِ ثابت نداره - از قیمتِ زنده‌ی economy_supply میاد و خودِ
+# خرید هم واقعاً روی تقاضای اون کالا تأثیر می‌ذاره. کسب‌وکارهای خدماتی
+# (آژانسِ املاک، کلینیک) عمداً اینجا نیستن - موجودیِ اون‌ها انتزاعیه،
+# نه یه کالای فیزیکیِ قابلِ معامله.
+BUSINESS_COMMODITY_MAP = {
+    "shop": "food",
+    "restaurant": "food",
+    "cafe": "water",
+    "garage": "raw_material",
+    "itcompany": "electronics",
+    "hotel": "energy",
+    "factory": "raw_material",
+    "cardealer": "steel",
+}
+
+# سیستمِ ورشکستگی: هر بار که کسب‌وکار نتونه هزینه‌هاش رو از کیفِ‌پولِ مالک
+# تأمین کنه، یه Strike می‌خوره و زیانش به‌جایِ گم‌شدن تبدیل به «بدهی» می‌شه.
+# بعد از BUSINESS_BANKRUPTCY_STRIKES بارِ پیاپی، کسب‌وکار ورشکست (Frozen)
+# می‌شه - دیگه نه سود می‌ده نه هزینه می‌خوره، تا بدهی‌اش پرداخت بشه.
+BUSINESS_BANKRUPTCY_STRIKES = 3

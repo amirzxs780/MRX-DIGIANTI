@@ -91,6 +91,10 @@ import economy_events
 # فاز ۲ V18 — Living Economy Engine: عرضه/تقاضای کالا + شاخص‌های کلان
 import economy_supply
 import economy_macro
+# فاز ۳ V18 — بازار سرمایه: بورسِ سهامِ شرکت‌های واقعیِ بازیکن‌ها
+import economy_stock
+# فاز ۳ V18 — مزایده و حراج اقتصادی
+import economy_auction
 import economy_shop2
 import economy_balance
 import economy_antiabuse
@@ -472,6 +476,8 @@ async def save_state():
         economy_events.save_state(),
         economy_supply.save_state(),
         economy_macro.save_state(),
+        economy_stock.save_state(),
+        economy_auction.save_state(),
         poll_engine.save_state(),
         purge_engine.save_state(),
         owner_panel.save_state(),
@@ -513,6 +519,8 @@ def load_state():
     economy_events.load_state()
     economy_supply.load_state()
     economy_macro.load_state()
+    economy_stock.load_state()
+    economy_auction.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
     owner_panel.load_state()
@@ -8100,8 +8108,27 @@ PERSIAN_COMMAND_ALIASES = {
     "تبلیغات": economy_business.advertise_command,
     "ارتقای کسب‌وکار": economy_business.upgrade_business_command,
     "مالیات کسب‌وکار": economy_business.pay_business_tax_command,
+    "پرداخت بدهی": economy_business.pay_debt_command,
     "سود کسب‌وکار": economy_business.business_profit_command,
     "تاریخچه کسب‌وکار": economy_business.business_history_command,
+
+    # 🏢 بورسِ سهامِ شرکت‌ها (economy_stock) — فاز ۳ V18
+    "بورس": economy_stock.stocks_command,
+    "عرضه اولیه": economy_stock.ipo_command,
+    "خرید سهام": economy_stock.buy_stock_command,
+    "فروش سهام": economy_stock.sell_stock_command,
+    "سهام من": economy_stock.stock_portfolio_command,
+    "پرتفوی سهام": economy_stock.stock_portfolio_command,
+    "تقسیم سود": economy_stock.pay_dividends_command,
+
+    # 🔨 مزایده و حراج (economy_auction) — فاز ۳ V18
+    "مزایده‌ها": economy_auction.auctions_command,
+    "مزایده ها": economy_auction.auctions_command,
+    "مزایده": economy_auction.create_auction_command,
+    "پیشنهاد": economy_auction.bid_command,
+    "لغو مزایده": economy_auction.cancel_auction_command,
+    "مزایده‌های من": economy_auction.my_auctions_command,
+    "مزایده های من": economy_auction.my_auctions_command,
 
     # اقتصاد پیشرفته (economy_engine)
     "تراکنش ها": economy_engine.transactions_command,
@@ -8473,8 +8500,20 @@ def main():
     app.add_handler(CommandHandler("advertise", economy_business.advertise_command))
     app.add_handler(CommandHandler("upgradebusiness", economy_business.upgrade_business_command))
     app.add_handler(CommandHandler("businesstax", economy_business.pay_business_tax_command))
+    app.add_handler(CommandHandler("paydebt", economy_business.pay_debt_command))
     app.add_handler(CommandHandler("businessprofit", economy_business.business_profit_command))
     app.add_handler(CommandHandler("businesshistory", economy_business.business_history_command))
+    app.add_handler(CommandHandler("stocks", economy_stock.stocks_command))
+    app.add_handler(CommandHandler("ipo", economy_stock.ipo_command))
+    app.add_handler(CommandHandler("buystock", economy_stock.buy_stock_command))
+    app.add_handler(CommandHandler("sellstock", economy_stock.sell_stock_command))
+    app.add_handler(CommandHandler("mystocks", economy_stock.stock_portfolio_command))
+    app.add_handler(CommandHandler("dividend", economy_stock.pay_dividends_command))
+    app.add_handler(CommandHandler("auctions", economy_auction.auctions_command))
+    app.add_handler(CommandHandler("auction", economy_auction.create_auction_command))
+    app.add_handler(CommandHandler("bid", economy_auction.bid_command))
+    app.add_handler(CommandHandler("cancelauction", economy_auction.cancel_auction_command))
+    app.add_handler(CommandHandler("myauctions", economy_auction.my_auctions_command))
 
     # اقتصاد داخلی
     app.add_handler(CommandHandler("balance", balance_command))
