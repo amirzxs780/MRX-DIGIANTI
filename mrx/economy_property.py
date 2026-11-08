@@ -106,6 +106,14 @@ def current_price(chat_id: int, uid: int, ptype: str) -> int:
         base *= economy_events.price_inflation_multiplier(chat_id)  # ارتقای فاز ۱۵: تورم
     except Exception:
         pass
+    try:
+        # فاز ۶ V18 — بازارِ مسکنِ پویا: مولتیپلایرِ زنده‌ی منطقه‌ای بر اساسِ
+        # خرید/فروشِ واقعیِ همه‌ی اعضایِ گروه در اون منطقه (نه فقط همین‌کاربر)
+        import economy_housing
+        import economy_district
+        base *= economy_housing.get_multiplier(chat_id, economy_district.district_of(chat_id, uid))
+    except Exception:
+        pass
     return round(base)
 
 
@@ -240,6 +248,12 @@ async def buy_property_command(update: Update, context: ContextTypes.DEFAULT_TYP
             "last_collect_ts": time.time(), "co_owner_id": None, "furniture": {}}
     _log_history(prop, "PURCHASE", f"خرید اولیه به قیمت {price:,}")
     owned(chat.id, uid).append(prop)
+    try:
+        import economy_housing
+        import economy_district
+        economy_housing.record_purchase(chat.id, economy_district.district_of(chat.id, uid), 1)
+    except Exception as e:
+        logger.warning(f"ثبتِ تقاضایِ بازارِ مسکن ناموفق بود: {e}")
     lines = [f"✅ {TYPES[key]['name']} #{prop['id']} خریداری شد!"]
     try:
         lines += await economy_missions.record_progress(chat.id, uid, "property_buy", 1)
@@ -285,6 +299,12 @@ async def sell_property_command(update: Update, context: ContextTypes.DEFAULT_TY
     payout = round(current_value(target) * resale_fraction)
     _log_history(target, "SALE", f"فروش به بازار به قیمت {payout:,}")
     props.remove(target)
+    try:
+        import economy_housing
+        import economy_district
+        economy_housing.record_sale(chat.id, economy_district.district_of(chat.id, uid), 1)
+    except Exception as e:
+        logger.warning(f"ثبتِ عرضه‌ی بازارِ مسکن ناموفق بود: {e}")
     new_wallet = await economy_core.add_coins(chat.id, uid, payout, kind="property_sell", note=f"فروش {TYPES[target['type']]['name']} #{prop_id}")
     await message.reply_text(
         f"✅ {TYPES[target['type']]['name']} #{prop_id} فروخته شد: +{payout} {config.CURRENCY_NAME} "

@@ -116,6 +116,12 @@ def _active_loans(chat_id: int, uid: int) -> list[dict]:
     return [l for l in _loans[chat_id][uid] if l["status"] == "ACTIVE"]
 
 
+def total_active_loan_debt(chat_id: int, uid: int) -> int:
+    """مجموعِ باقی‌مانده‌ی همه‌ی وام‌های فعال - برای گزارشِ حسابداری (فاز ۵ V18:
+    economy_accounting) به‌عنوانِ یکی از اقلامِ بدهی."""
+    return sum(l.get("remaining", 0) for l in _active_loans(chat_id, uid))
+
+
 async def _resolve_loans(chat_id: int, uid: int) -> list[str]:
     """چک Lazy برای همه‌ی وام‌های فعال: اگه قسط از موعد+Grace رد شده، جریمه‌ی
     دیرکرد + کسر اعتبار می‌خوره. اگه پشت‌سرهم به تعداد LOAN_DEFAULT_AFTER_MISSED_INSTALLMENTS

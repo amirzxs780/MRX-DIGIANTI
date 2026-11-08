@@ -63,6 +63,9 @@ import economy_missions
 import economy_macro
 import economy_stock
 import economy_auction
+import economy_accounting
+import economy_housing
+import economy_infrastructure
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +181,8 @@ CATEGORIES: dict[str, dict] = {
             ("🏢 کسب‌وکارها", "sec", "business"),
             ("🏙 شهر من", "sec", "city"),
             ("🗺 منطقه‌ی زندگی", "sec", "district"),
+            ("🏘 بازار مسکن گروه", "sec", "housing"),
+            ("🏗 زیرساخت شهری گروه", "sec", "infra"),
         ],
     },
     "life": {
@@ -205,6 +210,7 @@ CATEGORIES: dict[str, dict] = {
             ("💎 ارزش خالص من", "act", "ach"),
             ("👑 جدول رتبه‌بندی‌ها", "sec", "lb"),
             ("📊 اقتصاد کلان گروه", "sec", "macro"),
+            ("🧾 صورت‌حساب مالی", "sec", "statement"),
         ],
     },
 }
@@ -1224,6 +1230,32 @@ async def _render_auction(chat_id: int, uid: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 🧾 صورت‌حسابِ مالی (فاز ۵ V18) — نمایشی؛ گزارشِ دوره‌دار با دستورِ متنی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_statement(chat_id: int, uid: int):
+    text = economy_accounting.format_statement_text(chat_id, uid, period=None)
+    rows = [_back_row("statement")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🏘 بازارِ مسکن + 🏗 زیرساختِ شهری (فازِ ۶ V18) — نمایشی؛ مشارکت با دستورِ متنی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_housing(chat_id: int, uid: int):
+    text = economy_housing.format_housing_text(chat_id)
+    rows = [_back_row("housing")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def _render_infra(chat_id: int, uid: int):
+    text = economy_infrastructure.format_infrastructure_text(chat_id)
+    rows = [_back_row("infra")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 🔀 جدول بخش‌ها
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1249,6 +1281,9 @@ _SECTION_RENDERERS = {
     "macro": _render_macro,
     "stock": _render_stock,
     "auction": _render_auction,
+    "statement": _render_statement,
+    "housing": _render_housing,
+    "infra": _render_infra,
 }
 
 _SECTION_MODULE_KEY = {

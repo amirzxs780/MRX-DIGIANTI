@@ -643,10 +643,27 @@ def get_transaction(transaction_id: str) -> dict | None:
     return _ledger.get(transaction_id)
 
 
-def get_transaction_history(chat_id: int, uid: int, limit: int = 50) -> list[dict]:
-    """جدیدترین تراکنش‌های یک کاربر رو برمی‌گردونه (جدیدترین اول)."""
+def get_transaction_history(chat_id: int, uid: int, limit: int = 50,
+                             since_ts: float | None = None) -> list[dict]:
+    """جدیدترین تراکنش‌های یک کاربر رو برمی‌گردونه (جدیدترین اول).
+    اگه since_ts داده بشه (فاز ۵ V18 - برای گزارش‌های دوره‌ای در
+    economy_accounting)، فقط تراکنش‌های از اون لحظه به بعد رو برمی‌گردونه؛
+    چون ids به ترتیبِ زمانِ ثبت append می‌شن، همین که به یه رکوردِ قدیمی‌تر از
+    since_ts برسیم، همه‌ی بقیه هم قدیمی‌ترن و می‌شه زود متوقف شد."""
     ids = _ledger_by_user.get(chat_id, {}).get(uid, [])
-    result = [_ledger[i] for i in reversed(ids[-limit:]) if i in _ledger]
+    if since_ts is None:
+        return [_ledger[i] for i in reversed(ids[-limit:]) if i in _ledger]
+
+    result = []
+    for i in reversed(ids):
+        rec = _ledger.get(i)
+        if not rec:
+            continue
+        if rec["timestamp"] < since_ts:
+            break
+        result.append(rec)
+        if len(result) >= limit:
+            break
     return result
 
 

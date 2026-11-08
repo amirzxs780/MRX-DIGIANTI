@@ -2476,3 +2476,60 @@ BUSINESS_COMMODITY_MAP = {
 # بعد از BUSINESS_BANKRUPTCY_STRIKES بارِ پیاپی، کسب‌وکار ورشکست (Frozen)
 # می‌شه - دیگه نه سود می‌ده نه هزینه می‌خوره، تا بدهی‌اش پرداخت بشه.
 BUSINESS_BANKRUPTCY_STRIKES = 3
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🧾 DIGNANTI V18 — فاز ۵ (بانک و حسابداری): گزارش‌های مالیِ دوره‌ای
+# ═══════════════════════════════════════════════════════════════════════════
+
+# دوره‌های گزارش‌گیری (بخشِ ۱۳ نقشه‌ی V18: روزانه/هفتگی/ماهانه/فصلی)
+ACCOUNTING_PERIODS = {
+    "روزانه": 86400,
+    "هفتگی": 7 * 86400,
+    "ماهانه": 30 * 86400,
+    "فصلی": 90 * 86400,
+}
+ACCOUNTING_LEDGER_SCAN_LIMIT = 3000  # سقفِ ایمنیِ تعدادِ تراکنشی که برایِ یه گزارشِ دوره‌ای می‌خونیم
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🏘 DIGNANTI V18 — فاز ۶ (بازارِ مسکنِ پویا): economy_housing
+# برخلافِ current_price موجودِ economy_property (که فقط رویِ «تعدادِ ملکِ
+# همون‌کاربر» حساس بود)، این یه شاخصِ گروهی/منطقه‌ایه: بر اساسِ خرید/فروشِ
+# واقعیِ کلِ اعضایِ گروه در هر منطقه (از config.DISTRICTS) یه مولتیپلایرِ
+# زنده می‌سازه - دقیقاً «مناطق گران‌قیمت/در حال توسعه/کم‌تقاضا»یِ بخشِ ۶.
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_HOUSING_STATE_FILE = "economy_housing_state.json"
+
+HOUSING_TICK_INTERVAL_SECONDS = 900       # هر ۱۵ دقیقه‌ی واقعی یه Tick
+HOUSING_MAX_TICKS_PER_ACCESS = 50
+HOUSING_PRESSURE_DECAY_PER_TICK = 0.90
+HOUSING_MAX_CHANGE_PER_TICK = 0.05        # حداکثر ۵٪ جابه‌جاییِ مولتیپلایر در هر Tick
+HOUSING_MIN_MULTIPLIER = 0.6
+HOUSING_MAX_MULTIPLIER = 1.8
+HOUSING_DEMAND_SENSITIVITY = 0.03
+HOUSING_SUPPLY_SENSITIVITY = 0.025
+HOUSING_PRICE_HISTORY_LEN = 30
+
+# آستانه‌هایِ طبقه‌بندیِ منطقه بر اساسِ مولتیپلایرِ فعلی
+HOUSING_HOT_THRESHOLD = 1.15          # بالاتر از این = 🔥 داغ
+HOUSING_DEVELOPING_THRESHOLD = 1.05   # بینِ این و HOT = 📈 در حالِ توسعه
+HOUSING_COLD_THRESHOLD = 0.90         # پایین‌تر از این = 🧊 کم‌تقاضا
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🏗 DIGNANTI V18 — فاز ۶ (زیرساختِ شهریِ گروه): economy_infrastructure
+# برخلافِ economy_city.py (شهرِ شخصیِ هرکاربر)، این زیرساخت مشترکِ کلِ گروهه؛
+# هر عضوی می‌تونه بهش کمک مالی کنه (Crowd-Funded، چون هنوز خزانه‌ی عمومی/
+# دولت پیاده نشده - بخشِ ۱۰، فازِ بعدی). پولِ کمک‌شده مصرفِ واقعی/Sink‌ـه، نه
+# به‌جایی واریز می‌شه.
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_INFRASTRUCTURE_STATE_FILE = "economy_infrastructure_state.json"
+
+INFRASTRUCTURE_TYPES = {
+    "power_plant":  {"name": "⚡ نیروگاه",           "base_cost": 20000, "cost_growth": 0.6, "quality_weight": 1.2},
+    "roads":        {"name": "🛣 جاده و حمل‌ونقلِ عمومی", "base_cost": 12000, "cost_growth": 0.5, "quality_weight": 1.0},
+    "hospital":     {"name": "🏥 بیمارستان",         "base_cost": 25000, "cost_growth": 0.6, "quality_weight": 1.3},
+    "school":       {"name": "🏫 مدرسه",             "base_cost": 15000, "cost_growth": 0.5, "quality_weight": 1.0},
+    "water_system": {"name": "🚰 سیستمِ آب‌رسانی",    "base_cost": 10000, "cost_growth": 0.5, "quality_weight": 0.9},
+}
+INFRASTRUCTURE_MAX_LEVEL = 10

@@ -95,6 +95,11 @@ import economy_macro
 import economy_stock
 # فاز ۳ V18 — مزایده و حراج اقتصادی
 import economy_auction
+# فاز ۵ V18 — حسابداری: گزارش‌های مالیِ دوره‌ای (بدون State خودش)
+import economy_accounting
+# فاز ۶ V18 — بازارِ مسکنِ پویا + زیرساختِ شهریِ مشترکِ گروه
+import economy_housing
+import economy_infrastructure
 import economy_shop2
 import economy_balance
 import economy_antiabuse
@@ -478,6 +483,8 @@ async def save_state():
         economy_macro.save_state(),
         economy_stock.save_state(),
         economy_auction.save_state(),
+        economy_housing.save_state(),
+        economy_infrastructure.save_state(),
         poll_engine.save_state(),
         purge_engine.save_state(),
         owner_panel.save_state(),
@@ -521,6 +528,8 @@ def load_state():
     economy_macro.load_state()
     economy_stock.load_state()
     economy_auction.load_state()
+    economy_housing.load_state()
+    economy_infrastructure.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
     owner_panel.load_state()
@@ -8130,6 +8139,17 @@ PERSIAN_COMMAND_ALIASES = {
     "مزایده‌های من": economy_auction.my_auctions_command,
     "مزایده های من": economy_auction.my_auctions_command,
 
+    # 🧾 حسابداری (economy_accounting) — فاز ۵ V18
+    "صورت‌حساب": economy_accounting.statement_command,
+    "صورت حساب": economy_accounting.statement_command,
+    "سود و زیان شرکت‌ها": economy_accounting.business_pnl_command,
+    "سود و زیان شرکت ها": economy_accounting.business_pnl_command,
+
+    # 🏘 بازارِ مسکن + 🏗 زیرساختِ شهری (economy_housing / economy_infrastructure) — فاز ۶ V18
+    "بازار مسکن": economy_housing.housing_command,
+    "زیرساخت": economy_infrastructure.infrastructure_command,
+    "مشارکت در زیرساخت": economy_infrastructure.contribute_infrastructure_command,
+
     # اقتصاد پیشرفته (economy_engine)
     "تراکنش ها": economy_engine.transactions_command,
     "آمار اقتصاد": economy_engine.economystats_command,
@@ -8514,6 +8534,11 @@ def main():
     app.add_handler(CommandHandler("bid", economy_auction.bid_command))
     app.add_handler(CommandHandler("cancelauction", economy_auction.cancel_auction_command))
     app.add_handler(CommandHandler("myauctions", economy_auction.my_auctions_command))
+    app.add_handler(CommandHandler("statement", economy_accounting.statement_command))
+    app.add_handler(CommandHandler("businesspnl", economy_accounting.business_pnl_command))
+    app.add_handler(CommandHandler("housing", economy_housing.housing_command))
+    app.add_handler(CommandHandler("infrastructure", economy_infrastructure.infrastructure_command))
+    app.add_handler(CommandHandler("infracontribute", economy_infrastructure.contribute_infrastructure_command))
 
     # اقتصاد داخلی
     app.add_handler(CommandHandler("balance", balance_command))
