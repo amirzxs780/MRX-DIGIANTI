@@ -624,6 +624,14 @@ async def pay_business_tax_command(update: Update, context: ContextTypes.DEFAULT
     except economy_core.InsufficientFundsError:
         await message.reply_text(f"❌ موجودی کافی نیست. بدهی مالیاتی: {due:,} {config.CURRENCY_NAME}")
         return
+    # فاز ۷ V18: مالیاتِ کسب‌وکار دیگه فقط حذف نمی‌شه - به خزانه‌ی عمومیِ
+    # گروه واریز می‌شه (مبلغِ پرداختیِ کاربر هیچ تغییری نکرد، فقط مقصدِ پول)
+    try:
+        import economy_treasury
+        economy_treasury.deposit(chat.id, due, source="مالیاتِ کسب‌وکار",
+                                  note=f"{TYPES[target['type']]['name']} #{target['id']}")
+    except Exception as e:
+        logger.warning(f"واریزِ مالیات به خزانه ناموفق بود: {e}")
     target["last_tax_ts"] = time.time()
     _log_history(target, "TAX", f"پرداخت مالیات {due:,}")
     await message.reply_text(f"💰 مالیات {TYPES[target['type']]['name']} #{target['id']} پرداخت شد ({due:,} {config.CURRENCY_NAME}).")

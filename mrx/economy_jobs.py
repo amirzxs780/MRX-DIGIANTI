@@ -511,6 +511,14 @@ async def work_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     daily["count"] += 1
     daily["earned"] += reward
 
+    # فاز ۷ V18: اگه ادمین نرخِ مالیاتِ درآمد رو روشن کرده باشه، سهمش به
+    # خزانه‌ی عمومی می‌ره. پیش‌فرض ۰٪ است، یعنی reward بدونِ تغییر می‌مونه.
+    try:
+        import economy_treasury
+        reward = economy_treasury.collect_income_tax(chat.id, reward, source="کار")
+    except Exception as e:
+        logger.warning(f"اعمالِ مالیاتِ درآمد ناموفق بود: {e}")
+
     new_balance = await economy_core.add_coins(
         chat.id, uid, reward, kind="work",
         note=(f"کار — {job['name']}" if job else "کار — بدون شغل"),
@@ -635,6 +643,13 @@ async def salary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     job = JOBS[key]
     amount = salary_for(chat.id, uid, key)
     _last_salary_ts[chat.id][uid] = now
+
+    try:
+        import economy_treasury
+        amount = economy_treasury.collect_income_tax(chat.id, amount, source="حقوق")
+    except Exception as e:
+        logger.warning(f"اعمالِ مالیاتِ درآمد ناموفق بود: {e}")
+
     new_balance = await economy_core.add_coins(
         chat.id, uid, amount, kind="salary", note=f"حقوق {job['name']}"
     )

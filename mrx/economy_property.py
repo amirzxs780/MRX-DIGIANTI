@@ -139,10 +139,19 @@ async def _collect_one(chat_id: int, uid: int, prop: dict) -> int:
     if net_rate <= 0 or elapsed_hours <= 0:
         return 0
     gross = net_rate * elapsed_hours
-    tax = gross * info["tax_rate"]
+    tax = round(gross * info["tax_rate"])
     amount = round(gross - tax)
     if amount > 0:
         await economy_core.add_coins(chat_id, uid, amount, kind="property_income", note=f"درآمد {info['name']} (پس از مالیات)")
+    # فاز ۷ V18: سهمِ مالیاتی که قبلاً فقط از دستِ مالک کم می‌شد (و هیچ‌جا
+    # نمی‌رفت) الان واقعاً به خزانه‌ی عمومیِ گروه واریز می‌شه. مبلغِ پرداختی
+    # به مالک هیچ تغییری نکرد.
+    if tax > 0:
+        try:
+            import economy_treasury
+            economy_treasury.deposit(chat_id, tax, source="مالیاتِ ملک", note=info["name"])
+        except Exception as e:
+            logger.warning(f"واریزِ مالیاتِ ملک به خزانه ناموفق بود: {e}")
     return amount
 
 

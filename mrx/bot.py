@@ -100,6 +100,8 @@ import economy_accounting
 # فاز ۶ V18 — بازارِ مسکنِ پویا + زیرساختِ شهریِ مشترکِ گروه
 import economy_housing
 import economy_infrastructure
+# فاز ۷ V18 — مالیات و دولت: خزانه‌ی عمومیِ گروه
+import economy_treasury
 import economy_shop2
 import economy_balance
 import economy_antiabuse
@@ -485,6 +487,7 @@ async def save_state():
         economy_auction.save_state(),
         economy_housing.save_state(),
         economy_infrastructure.save_state(),
+        economy_treasury.save_state(),
         poll_engine.save_state(),
         purge_engine.save_state(),
         owner_panel.save_state(),
@@ -530,6 +533,7 @@ def load_state():
     economy_auction.load_state()
     economy_housing.load_state()
     economy_infrastructure.load_state()
+    economy_treasury.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
     owner_panel.load_state()
@@ -8150,6 +8154,11 @@ PERSIAN_COMMAND_ALIASES = {
     "زیرساخت": economy_infrastructure.infrastructure_command,
     "مشارکت در زیرساخت": economy_infrastructure.contribute_infrastructure_command,
 
+    # 🏛 خزانه و مالیات (economy_treasury) — فاز ۷ V18
+    "خزانه": economy_treasury.treasury_command,
+    "تنظیم مالیات": economy_treasury.set_tax_rate_command,
+    "خرج خزانه برای زیرساخت": economy_treasury.spend_treasury_on_infrastructure_command,
+
     # اقتصاد پیشرفته (economy_engine)
     "تراکنش ها": economy_engine.transactions_command,
     "آمار اقتصاد": economy_engine.economystats_command,
@@ -8539,6 +8548,9 @@ def main():
     app.add_handler(CommandHandler("housing", economy_housing.housing_command))
     app.add_handler(CommandHandler("infrastructure", economy_infrastructure.infrastructure_command))
     app.add_handler(CommandHandler("infracontribute", economy_infrastructure.contribute_infrastructure_command))
+    app.add_handler(CommandHandler("treasury", economy_treasury.treasury_command))
+    app.add_handler(CommandHandler("settaxrate", economy_treasury.set_tax_rate_command))
+    app.add_handler(CommandHandler("treasuryfund", economy_treasury.spend_treasury_on_infrastructure_command))
 
     # اقتصاد داخلی
     app.add_handler(CommandHandler("balance", balance_command))

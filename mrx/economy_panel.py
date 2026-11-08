@@ -66,6 +66,7 @@ import economy_auction
 import economy_accounting
 import economy_housing
 import economy_infrastructure
+import economy_treasury
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,7 @@ CATEGORIES: dict[str, dict] = {
             ("🗺 منطقه‌ی زندگی", "sec", "district"),
             ("🏘 بازار مسکن گروه", "sec", "housing"),
             ("🏗 زیرساخت شهری گروه", "sec", "infra"),
+            ("🏛 خزانه‌ی عمومی گروه", "sec", "treasury"),
         ],
     },
     "life": {
@@ -1255,6 +1257,12 @@ async def _render_infra(chat_id: int, uid: int):
     return text, InlineKeyboardMarkup(rows)
 
 
+async def _render_treasury(chat_id: int, uid: int):
+    text = economy_treasury.format_treasury_text(chat_id)
+    rows = [_back_row("treasury")]
+    return text, InlineKeyboardMarkup(rows)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 🔀 جدول بخش‌ها
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1284,6 +1292,7 @@ _SECTION_RENDERERS = {
     "statement": _render_statement,
     "housing": _render_housing,
     "infra": _render_infra,
+    "treasury": _render_treasury,
 }
 
 _SECTION_MODULE_KEY = {

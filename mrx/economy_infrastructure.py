@@ -131,6 +131,45 @@ async def contribute(chat_id: int, uid: int, key: str, amount: int) -> dict:
     }
 
 
+def fund_from_treasury(chat_id: int, key: str, amount: int) -> dict:
+    """فاز ۷ V18: برخلافِ contribute() که از کیفِ‌پولِ شخصیِ یه عضو کم
+    می‌کنه، این از خزانه‌ی عمومیِ گروه (economy_treasury) خرج می‌کنه -
+    دقیقاً «پروژه‌هایِ عمرانیِ» بخشِ ۱۰. هر کاربری نمی‌تونه صدا بزنه؛ فراخوان
+    (economy_treasury.spend_on_infrastructure_command) خودش قبلش مجوزِ
+    manage_economy رو چک می‌کنه."""
+    if key not in TYPES:
+        raise InfrastructureError(f"نوعِ زیرساختِ «{key}» وجود نداره.")
+    if amount <= 0:
+        raise InfrastructureError("مبلغ باید مثبت باشه.")
+
+    e = _entry(chat_id, key)
+    max_level = getattr(config, "INFRASTRUCTURE_MAX_LEVEL", 10)
+    if e["level"] >= max_level:
+        raise InfrastructureError(f"{TYPES[key]['name']} به حداکثر Level ({max_level}) رسیده.")
+
+    import economy_treasury
+    economy_treasury.spend(chat_id, amount, purpose=f"زیرساخت:{key}", note=TYPES[key]["name"])
+
+    e["progress"] += amount
+    e["total_invested"] += amount
+    e["contributors"]["treasury"] = e["contributors"].get("treasury", 0) + amount
+
+    leveled_up = False
+    while e["level"] < max_level:
+        cost = next_level_cost(key, e["level"])
+        if e["progress"] < cost:
+            break
+        e["progress"] -= cost
+        e["level"] += 1
+        leveled_up = True
+
+    return {
+        "key": key, "level": e["level"], "progress": e["progress"],
+        "cost_for_next": None if e["level"] >= max_level else next_level_cost(key, e["level"]),
+        "leveled_up": leveled_up,
+    }
+
+
 def quality_index(chat_id: int) -> float:
     """شاخصِ کیفیتِ زیرساختِ گروه، ۰ تا ۱۰۰ - میانگینِ وزن‌دارِ Levelِ همه‌ی
     زیرساخت‌ها نسبت به حداکثر. مستقل نگه داشته شده (به عمد به هیچ فرمولِ
