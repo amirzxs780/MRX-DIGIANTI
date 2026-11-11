@@ -67,6 +67,8 @@ import economy_accounting
 import economy_housing
 import economy_infrastructure
 import economy_treasury
+import economy_trade
+import economy_partnership
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +164,7 @@ CATEGORIES: dict[str, dict] = {
             ("📈 بازار و ترید", "sec", "market"),
             ("🏢 بورس سهام شرکت‌ها", "sec", "stock"),
             ("🔨 مزایده‌ها", "sec", "auction"),
+            ("🚚 تجارت عمده و قراردادها", "sec", "trade"),
         ],
     },
     "shop": {
@@ -180,6 +183,7 @@ CATEGORIES: dict[str, dict] = {
             ("🏠 املاک", "sec", "prop"),
             ("🚗 خودروها", "sec", "vehicle"),
             ("🏢 کسب‌وکارها", "sec", "business"),
+            ("🤝 پیشنهادهایِ شراکت", "sec", "partnership"),
             ("🏙 شهر من", "sec", "city"),
             ("🗺 منطقه‌ی زندگی", "sec", "district"),
             ("🏘 بازار مسکن گروه", "sec", "housing"),
@@ -1264,6 +1268,29 @@ async def _render_treasury(chat_id: int, uid: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 🚚 تجارتِ عمده و قراردادها (فاز ۸ V18) — نمایشی؛ خرید/فروش/قرارداد با دستورِ متنی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_trade(chat_id: int, uid: int):
+    text = (
+        economy_trade.format_holdings_text(chat_id, uid)
+        + "\n\n" + economy_trade.format_offers_text(chat_id, uid)
+    )
+    rows = [_back_row("trade")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🤝 شراکت (فاز ۹ V18) — نمایشی؛ پیشنهاد/قبول/رد با دستورِ متنی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_partnership(chat_id: int, uid: int):
+    text = economy_partnership.format_pending_text(chat_id, uid)
+    rows = [_back_row("partnership")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 🔀 جدول بخش‌ها
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1293,6 +1320,8 @@ _SECTION_RENDERERS = {
     "housing": _render_housing,
     "infra": _render_infra,
     "treasury": _render_treasury,
+    "trade": _render_trade,
+    "partnership": _render_partnership,
 }
 
 _SECTION_MODULE_KEY = {

@@ -128,6 +128,7 @@ def hourly_revenue(chat_id: int, b: dict) -> float:
         revenue *= economy_events.demand_multiplier(chat_id)  # ارتقای فاز ۱۵: کاهش/افزایش تقاضا
     except Exception:
         pass
+    revenue *= b.get("branches", 1)  # فاز ۱۰ V18 — هر شعبه، ظرفیتِ تولید رو به همون نسبت چند برابر می‌کنه
     return revenue
 
 
@@ -135,7 +136,7 @@ def hourly_expense(b: dict) -> float:
     info = TYPES[b["type"]]
     rent = info["base_expense_per_hour"] * (1 + (b["level"] - 1) * 0.15)
     salaries = b["employees"] * info["employee_cost_per_hour"]
-    return rent + salaries
+    return (rent + salaries) * b.get("branches", 1)  # فاز ۱۰ V18 — هزینه‌ی نگهداری هم با شعبه‌ها چند برابر می‌شه
 
 
 def current_value(b: dict) -> int:
@@ -150,6 +151,13 @@ def upgrade_cost(b: dict) -> int:
     info = TYPES[b["type"]]
     mult = getattr(config, "BUSINESS_UPGRADE_COST_MULTIPLIER", 0.8)
     return round(info["base_price"] * mult * (b["level"] + 1))
+
+
+def branch_cost(b: dict) -> int:
+    """هزینه‌ی باز کردنِ شعبه‌ی بعدی - فاز ۱۰ V18 (توسعه‌ی شعبه، بخشِ ۵)."""
+    info = TYPES[b["type"]]
+    mult = getattr(config, "BUSINESS_BRANCH_COST_MULTIPLIER", 0.7)
+    return round(info["base_price"] * mult * b.get("branches", 1))
 
 
 def hire_cost(b: dict) -> int:
@@ -213,8 +221,27 @@ async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
     net = round(revenue - expense)
     if net >= 0:
         if net > 0:
-            await economy_core.add_coins(chat_id, uid, net, kind="BUSINESS",
-                                          note=f"سود {TYPES[b['type']]['name']} #{b['id']}")
+            # فاز ۹ V18: اگه این کسب‌وکار شریک داره (economy_partnership)، سود
+            # طبقِ درصدِ سهمِ هرکس تقسیم می‌شه؛ بدونِ شریک دقیقاً مثلِ قبل
+            # ۱۰۰٪ به مالک می‌رسه (پیش‌فرض، چون partners پیشفرض خالیه).
+            partners = b.get("partners", {})
+            if partners:
+                owner_share = net
+                for partner_uid_s, fraction in partners.items():
+                    partner_uid = int(partner_uid_s)
+                    share_amount = round(net * fraction)
+                    if share_amount > 0:
+                        await economy_core.add_coins(
+                            chat_id, partner_uid, share_amount, kind="BUSINESS",
+                            note=f"سهمِ شراکت از {TYPES[b['type']]['name']} #{b['id']}",
+                        )
+                    owner_share -= share_amount
+                if owner_share > 0:
+                    await economy_core.add_coins(chat_id, uid, owner_share, kind="BUSINESS",
+                                                  note=f"سود {TYPES[b['type']]['name']} #{b['id']}")
+            else:
+                await economy_core.add_coins(chat_id, uid, net, kind="BUSINESS",
+                                              note=f"سود {TYPES[b['type']]['name']} #{b['id']}")
         return net, 0
 
     # net منفیه: سعی کن از موجودی کاربر کم کنی؛ اگه نشد، یه Strike بخوره
@@ -331,6 +358,8 @@ async def buy_business_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "last_collect_ts": now, "last_tax_ts": now, "purchased_ts": now,
         "lifetime_revenue": 0, "lifetime_expense": 0, "history": [],
         "debt": 0, "crisis_strikes": 0, "bankrupt": False,  # فاز ۴ V18 — سیستمِ ورشکستگی
+        "partners": {},  # فاز ۹ V18 — شراکت: uid(str) -> درصدِ سهم
+        "branches": 1,  # فاز ۱۰ V18 — توسعه‌ی شعبه
     }
     _log_history(b, "BUSINESS", f"خرید نو به قیمت {price:,}")
     owned(chat.id, uid).append(b)
@@ -600,6 +629,43 @@ async def upgrade_business_command(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         logger.warning(f"چک دستاوردهای اقتصادی ناموفق بود: {e}")
     await message.reply_text("\n".join(lines))
+    await host.save_state()
+
+
+async def expand_branch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """توسعه شعبه [شناسه] / /expandbranch <id> — فاز ۱۰ V18 (بخشِ ۵: توسعه‌ی شعبه).
+    برخلافِ ارتقا (که Levelِ همون واحد رو بالا می‌بره)، این یه واحدِ کاملِ
+    جدید اضافه می‌کنه - درآمد و هزینه‌ی ساعتی هر دو به همون نسبت چند برابر می‌شن."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    target = _find_owned(chat.id, uid, context.args or [])
+    if not target:
+        await message.reply_text("استفاده: «توسعه شعبه [شناسه]»")
+        return
+    if target.get("bankrupt"):
+        await message.reply_text("❌ این کسب‌وکار ورشکسته و Frozen‌ـه. اول با «پرداخت بدهی» رفعش کن.")
+        return
+    max_branches = getattr(config, "BUSINESS_MAX_BRANCHES", 5)
+    if target.get("branches", 1) >= max_branches:
+        await message.reply_text(f"❌ این کسب‌وکار به حداکثرِ شعبه ({max_branches}) رسیده.")
+        return
+    cost = branch_cost(target)
+    try:
+        await economy_core.remove_coins(chat.id, uid, cost, kind="BUSINESS", note="توسعه‌ی شعبه")
+    except economy_core.InsufficientFundsError:
+        await message.reply_text(f"❌ موجودی کافی نیست. هزینه‌ی شعبه‌ی جدید: {cost:,} {config.CURRENCY_NAME}")
+        return
+    await _collect_one(chat.id, uid, target)
+    target["branches"] = target.get("branches", 1) + 1
+    _log_history(target, "BUSINESS", f"بازکردنِ شعبه‌ی {target['branches']} به هزینه‌ی {cost:,}")
+    await message.reply_text(
+        f"🏬 {TYPES[target['type']]['name']} #{target['id']} الان {target['branches']} شعبه داره! "
+        f"(درآمد و هزینه‌ی ساعتی ×{target['branches']} شدن)"
+    )
     await host.save_state()
 
 

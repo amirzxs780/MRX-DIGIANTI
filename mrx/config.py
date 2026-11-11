@@ -1475,6 +1475,16 @@ JOBS = {
     "jeweler":    {"name": "جواهرساز",      "emoji": "💎",  "tier": "EPIC",       "base_salary": 250, "energy_cost": 26, "fail_chance": 0.08, "req_total_level": 38, "req_reputation": 60,  "ability": "پایه‌ی خوبی برای ماژول Black Market (فاز بعد)"},
     "manager":    {"name": "مدیر",         "emoji": "🏢",  "tier": "LEGENDARY",  "base_salary": 380, "energy_cost": 30, "fail_chance": 0.10, "req_total_level": 65, "req_reputation": 110, "ability": "بالاترین حقوق ثابت بین شغل‌های غیر-تاپ"},
     "capitalist": {"name": "سرمایه‌دار",    "emoji": "👑",  "tier": "LEGENDARY",  "base_salary": 450, "energy_cost": 32, "fail_chance": 0.12, "req_total_level": 80, "req_reputation": 140, "ability": "بالاترین حقوق و پرستیژ کل Economy"},
+    # فاز ۱۰ V18 (تکمیلِ بخشِ ۹) — مشاغلِ تازه‌ی درخواست‌شده
+    "salesperson":     {"name": "فروشنده",        "emoji": "🛍️", "tier": "COMMON",    "base_salary": 48,  "energy_cost": 13, "fail_chance": 0.025,"req_total_level": 0,  "req_reputation": 0,   "ability": "پاداشِ فروشِ گاه‌به‌گاه"},
+    "farmer":          {"name": "کشاورز",         "emoji": "🌾",  "tier": "COMMON",    "base_salary": 42,  "energy_cost": 12, "fail_chance": 0.02, "req_total_level": 0,  "req_reputation": 0,   "ability": "پایه‌ی خوبی برایِ کارِ مزرعه (کسب‌وکار)"},
+    "teacher":         {"name": "معلم",          "emoji": "🧑‍🏫", "tier": "UNCOMMON",  "base_salary": 80,  "energy_cost": 16, "fail_chance": 0.03, "req_total_level": 6,  "req_reputation": 0,   "ability": "شانسِ کمی بیشتر برایِ جایزه‌ی آموزشی"},
+    "accountant":      {"name": "حسابدار",       "emoji": "🧾",  "tier": "UNCOMMON",  "base_salary": 90,  "energy_cost": 17, "fail_chance": 0.035,"req_total_level": 9,  "req_reputation": 5,   "ability": "دقتِ بالا، شانسِ شکستِ کمتر روی کارهایِ مالی"},
+    "architect":       {"name": "معمار",         "emoji": "📐",  "tier": "RARE",      "base_salary": 145, "energy_cost": 21, "fail_chance": 0.055,"req_total_level": 19, "req_reputation": 22,  "ability": "پایه‌ی خوبی برایِ کسب‌وکارِ ساختمانی"},
+    "tech_specialist": {"name": "متخصص فناوری",   "emoji": "🛠️", "tier": "RARE",      "base_salary": 135, "energy_cost": 20, "fail_chance": 0.05, "req_total_level": 16, "req_reputation": 20,  "ability": "آشنا با ابزارهایِ فنی، Job XP بیشتر"},
+    "doctor":          {"name": "پزشک",          "emoji": "🩺",  "tier": "EPIC",      "base_salary": 245, "energy_cost": 25, "fail_chance": 0.075,"req_total_level": 36, "req_reputation": 58,  "ability": "اعتبارِ اجتماعیِ بالا"},
+    "lawyer":          {"name": "وکیل",          "emoji": "⚖️",  "tier": "EPIC",      "base_salary": 240, "energy_cost": 25, "fail_chance": 0.075,"req_total_level": 34, "req_reputation": 57,  "ability": "کاهشِ جریمه در دعاوی"},
+    "project_manager": {"name": "مدیر پروژه",     "emoji": "📋",  "tier": "LEGENDARY", "base_salary": 400, "energy_cost": 31, "fail_chance": 0.11, "req_total_level": 70, "req_reputation": 120, "ability": "هماهنگیِ تیمی، حقوقِ بالا"},
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1865,7 +1875,20 @@ BUSINESS_TYPES = {
     "factory":    {"name": "🏭 کارخانه",       "base_price": 200000, "base_revenue_per_hour": 520, "base_expense_per_hour": 150,"max_employees": 20, "employee_cost_per_hour": 16, "employee_revenue_bonus_frac": 0.09, "inventory_capacity": 500, "inventory_cost_per_unit": 8,  "inventory_consumption_per_hour": 15,"tax_rate": 0.03},
     "clinic":     {"name": "🏥 کلینیک",        "base_price": 100000, "base_revenue_per_hour": 300, "base_expense_per_hour": 80, "max_employees": 8,  "employee_cost_per_hour": 28, "employee_revenue_bonus_frac": 0.15, "inventory_capacity": 100, "inventory_cost_per_unit": 40, "inventory_consumption_per_hour": 3, "tax_rate": 0.025},
     "cardealer":  {"name": "🚗 فروشگاه خودرو", "base_price": 250000, "base_revenue_per_hour": 480, "base_expense_per_hour": 140,"max_employees": 10, "employee_cost_per_hour": 24, "employee_revenue_bonus_frac": 0.12, "inventory_capacity": 30,  "inventory_cost_per_unit": 2000,"inventory_consumption_per_hour": 0.5,"tax_rate": 0.035},
+    # فاز ۱۰ V18 (تکمیلِ بخشِ ۵) — انواعِ کسب‌وکارِ تازه‌ی درخواست‌شده
+    "supermarket":  {"name": "🛒 سوپرمارکت",        "base_price": 30000,  "base_revenue_per_hour": 130, "base_expense_per_hour": 35, "max_employees": 7,  "employee_cost_per_hour": 13, "employee_revenue_bonus_frac": 0.11, "inventory_capacity": 300, "inventory_cost_per_unit": 18, "inventory_consumption_per_hour": 10, "tax_rate": 0.02},
+    "clothing_store": {"name": "👗 فروشگاه لباس",    "base_price": 28000,  "base_revenue_per_hour": 110, "base_expense_per_hour": 30, "max_employees": 5,  "employee_cost_per_hour": 12, "employee_revenue_bonus_frac": 0.12, "inventory_capacity": 200, "inventory_cost_per_unit": 20, "inventory_consumption_per_hour": 6,  "tax_rate": 0.02},
+    "farm":         {"name": "🌾 مزرعه",            "base_price": 40000,  "base_revenue_per_hour": 150, "base_expense_per_hour": 35, "max_employees": 6,  "employee_cost_per_hour": 10, "employee_revenue_bonus_frac": 0.13, "inventory_capacity": 400, "inventory_cost_per_unit": 10, "inventory_consumption_per_hour": 12, "tax_rate": 0.015},
+    "mine":         {"name": "⛏ معدن",             "base_price": 60000,  "base_revenue_per_hour": 200, "base_expense_per_hour": 50, "max_employees": 8,  "employee_cost_per_hour": 14, "employee_revenue_bonus_frac": 0.10, "inventory_capacity": 350, "inventory_cost_per_unit": 25, "inventory_consumption_per_hour": 10, "tax_rate": 0.025},
+    "transport_co": {"name": "🚚 شرکت حمل‌ونقل",     "base_price": 90000,  "base_revenue_per_hour": 270, "base_expense_per_hour": 75, "max_employees": 12, "employee_cost_per_hour": 20, "employee_revenue_bonus_frac": 0.11, "inventory_capacity": 400, "inventory_cost_per_unit": 14, "inventory_consumption_per_hour": 20, "tax_rate": 0.03},
+    "construction_co": {"name": "🏗 شرکت ساختمانی", "base_price": 180000, "base_revenue_per_hour": 400, "base_expense_per_hour": 110,"max_employees": 18, "employee_cost_per_hour": 22, "employee_revenue_bonus_frac": 0.09, "inventory_capacity": 300, "inventory_cost_per_unit": 35, "inventory_consumption_per_hour": 12, "tax_rate": 0.03},
+    "entertainment_center": {"name": "🎡 مرکز تفریحی", "base_price": 120000, "base_revenue_per_hour": 340, "base_expense_per_hour": 90, "max_employees": 12, "employee_cost_per_hour": 18, "employee_revenue_bonus_frac": 0.13, "inventory_capacity": 200, "inventory_cost_per_unit": 20, "inventory_consumption_per_hour": 8, "tax_rate": 0.03},
+    "manufacturing_co": {"name": "🏭 شرکت تولیدی", "base_price": 220000, "base_revenue_per_hour": 540, "base_expense_per_hour": 155,"max_employees": 22, "employee_cost_per_hour": 17, "employee_revenue_bonus_frac": 0.09, "inventory_capacity": 550, "inventory_cost_per_unit": 9,  "inventory_consumption_per_hour": 16, "tax_rate": 0.03},
+    "service_co":   {"name": "🧰 شرکت خدماتی",      "base_price": 70000,  "base_revenue_per_hour": 230, "base_expense_per_hour": 55, "max_employees": 9,  "employee_cost_per_hour": 20, "employee_revenue_bonus_frac": 0.15, "inventory_capacity": 80,  "inventory_cost_per_unit": 50, "inventory_consumption_per_hour": 2,  "tax_rate": 0.025},
 }
+
+BUSINESS_BRANCH_COST_MULTIPLIER = 0.7   # هزینه‌ی شعبه‌ی بعدی = base_price × این‌عدد × تعدادِ شعبه‌ی فعلی
+BUSINESS_MAX_BRANCHES = 5               # هر شعبه درآمد/هزینه‌ی ساعتی رو به همون نسبت چند برابر می‌کنه
 
 BUSINESS_UPGRADE_COST_MULTIPLIER = 0.8    # هزینه‌ی ارتقا = base_price × این‌عدد × Level جدید
 BUSINESS_LEVEL_REVENUE_BONUS = 0.25       # هر Level، ۲۵٪ به درآمد پایه اضافه می‌کنه
@@ -2469,6 +2492,16 @@ BUSINESS_COMMODITY_MAP = {
     "hotel": "energy",
     "factory": "raw_material",
     "cardealer": "steel",
+    # فاز ۱۰ V18 — انواعِ تازه. farm/mine/service_co عمداً اینجا نیستن:
+    # این دو نوع «تولیدکننده‌ی خامِ» یه کالا هستن (نه مصرف‌کننده‌اش)، پس
+    # نگاشت‌شون به همون کالا برعکس بود؛ service_co هم مثلِ realestate/clinic
+    # کالایِ فیزیکیِ مشخصی نداره.
+    "supermarket": "food",
+    "clothing_store": "textile",
+    "transport_co": "fuel",
+    "construction_co": "steel",
+    "entertainment_center": "energy",
+    "manufacturing_co": "raw_material",
 }
 
 # سیستمِ ورشکستگی: هر بار که کسب‌وکار نتونه هزینه‌هاش رو از کیفِ‌پولِ مالک
@@ -2547,3 +2580,32 @@ ECONOMY_TREASURY_STATE_FILE = "economy_treasury_state.json"
 TREASURY_MAX_INCOME_TAX_RATE = 0.25   # سقفِ نرخِ مالیات‌بر‌درآمدی که ادمین می‌تونه تنظیم کنه
 TREASURY_DEFAULT_INCOME_TAX_RATE = 0.0  # پیش‌فرض صفر - یعنی تا ادمین دستی تنظیم نکنه، هیچ رفتارِ موجودی تغییر نمی‌کنه
 TREASURY_HISTORY_MAX_LEN = 200
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🚚 DIGNANTI V18 — فاز ۸ (تجارت، واردات و صادرات): economy_trade
+# دسترسیِ مستقیمِ کاربران (نه فقط کسب‌وکارها) به کالاهایِ economy_supply:
+# خرید/فروشِ عمده (با هزینه‌ی حمل/انبارداری) + قراردادهایِ تأمینِ کالایِ
+# دوطرفه (OTC، قیمتِ قفل‌شده، مستقل از نوسانِ لحظه‌ایِ بازار).
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_TRADE_STATE_FILE = "economy_trade_state.json"
+
+TRADE_BULK_FEE_PERCENT = 0.02    # هزینه‌ی حمل‌ونقل/انبارداریِ هر معامله‌ی عمده
+TRADE_MIN_BULK_QTY = 10          # حداقل تعداد برای ثبت به‌عنوانِ «عمده»
+TRADE_CONTRACT_MAX_ACTIVE = 5    # حداکثر قراردادِ پیشنهادیِ فعال (به‌عنوانِ فروشنده) برایِ هر کاربر
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🤝 DIGNANTI V18 — فاز ۹ (قراردادهای شراکت): economy_partnership
+# شراکتِ مستقیم در یه کسب‌وکارِ *مشخص* (برخلافِ economy_stock که نیازِ به
+# IPO و حداقل‌ارزش داره و سهامش توی بازار معامله می‌شه). اینجا مالک مستقیم
+# بخشی از سهمِ سودِ آینده‌ی کسب‌وکارش رو به یه کاربرِ مشخص پیشنهاد می‌ده؛ با
+# پذیرشِ دوطرفه (بخشِ۱۱: «برای جلوگیری از سوءاستفاده، پذیرش دوطرفه ... ضروری
+# است») فعال می‌شه و از اون به بعد هر سودی که جمع‌آوری بشه خودکار بینِ
+# مالک و شریک(ها) طبقِ درصدِ سهم تقسیم می‌شه.
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_PARTNERSHIP_STATE_FILE = "economy_partnership_state.json"
+
+PARTNERSHIP_MAX_PARTNERS_PER_BUSINESS = 5
+PARTNERSHIP_MIN_OWNER_EQUITY = 0.10   # مالک همیشه باید حداقل ۱۰٪ سهم نگه داره
+PARTNERSHIP_MAX_PENDING_PER_USER = 5  # حداکثر پیشنهادِ شراکتِ معلق (به‌عنوانِ پیشنهاددهنده)

@@ -102,6 +102,10 @@ import economy_housing
 import economy_infrastructure
 # فاز ۷ V18 — مالیات و دولت: خزانه‌ی عمومیِ گروه
 import economy_treasury
+# فاز ۸ V18 — تجارت، واردات و صادرات: خرید/فروشِ عمده + قراردادِ تأمینِ کالا
+import economy_trade
+# فاز ۹ V18 — قراردادهایِ شراکت: سهمِ سودِ مستقیم در یه کسب‌وکارِ مشخص
+import economy_partnership
 import economy_shop2
 import economy_balance
 import economy_antiabuse
@@ -488,6 +492,8 @@ async def save_state():
         economy_housing.save_state(),
         economy_infrastructure.save_state(),
         economy_treasury.save_state(),
+        economy_trade.save_state(),
+        economy_partnership.save_state(),
         poll_engine.save_state(),
         purge_engine.save_state(),
         owner_panel.save_state(),
@@ -534,6 +540,8 @@ def load_state():
     economy_housing.load_state()
     economy_infrastructure.load_state()
     economy_treasury.load_state()
+    economy_trade.load_state()
+    economy_partnership.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
     owner_panel.load_state()
@@ -8120,6 +8128,7 @@ PERSIAN_COMMAND_ALIASES = {
     "قیمت کسب‌وکار": economy_business.set_price_command,
     "تبلیغات": economy_business.advertise_command,
     "ارتقای کسب‌وکار": economy_business.upgrade_business_command,
+    "توسعه شعبه": economy_business.expand_branch_command,
     "مالیات کسب‌وکار": economy_business.pay_business_tax_command,
     "پرداخت بدهی": economy_business.pay_debt_command,
     "سود کسب‌وکار": economy_business.business_profit_command,
@@ -8158,6 +8167,22 @@ PERSIAN_COMMAND_ALIASES = {
     "خزانه": economy_treasury.treasury_command,
     "تنظیم مالیات": economy_treasury.set_tax_rate_command,
     "خرج خزانه برای زیرساخت": economy_treasury.spend_treasury_on_infrastructure_command,
+
+    # 🚚 تجارت، واردات و صادرات (economy_trade) — فاز ۸ V18
+    "خرید عمده": economy_trade.bulk_buy_command,
+    "فروش عمده": economy_trade.bulk_sell_command,
+    "کالاهای من": economy_trade.holdings_command,
+    "قرارداد تامین کالا": economy_trade.offer_contract_command,
+    "قرارداد تأمین کالا": economy_trade.offer_contract_command,
+    "قبول قرارداد": economy_trade.accept_contract_command,
+    "قراردادهای من": economy_trade.my_contracts_command,
+
+    # 🤝 شراکت (economy_partnership) — فاز ۹ V18
+    "شراکت در کسب‌وکار": economy_partnership.propose_partnership_command,
+    "قبول شراکت": economy_partnership.accept_partnership_command,
+    "رد شراکت": economy_partnership.reject_partnership_command,
+    "شراکت‌های من": economy_partnership.my_partnerships_command,
+    "شراکت های من": economy_partnership.my_partnerships_command,
 
     # اقتصاد پیشرفته (economy_engine)
     "تراکنش ها": economy_engine.transactions_command,
@@ -8528,6 +8553,7 @@ def main():
     app.add_handler(CommandHandler("setbusinessprice", economy_business.set_price_command))
     app.add_handler(CommandHandler("advertise", economy_business.advertise_command))
     app.add_handler(CommandHandler("upgradebusiness", economy_business.upgrade_business_command))
+    app.add_handler(CommandHandler("expandbranch", economy_business.expand_branch_command))
     app.add_handler(CommandHandler("businesstax", economy_business.pay_business_tax_command))
     app.add_handler(CommandHandler("paydebt", economy_business.pay_debt_command))
     app.add_handler(CommandHandler("businessprofit", economy_business.business_profit_command))
@@ -8551,6 +8577,16 @@ def main():
     app.add_handler(CommandHandler("treasury", economy_treasury.treasury_command))
     app.add_handler(CommandHandler("settaxrate", economy_treasury.set_tax_rate_command))
     app.add_handler(CommandHandler("treasuryfund", economy_treasury.spend_treasury_on_infrastructure_command))
+    app.add_handler(CommandHandler("bulkbuy", economy_trade.bulk_buy_command))
+    app.add_handler(CommandHandler("bulksell", economy_trade.bulk_sell_command))
+    app.add_handler(CommandHandler("holdings", economy_trade.holdings_command))
+    app.add_handler(CommandHandler("offercontract", economy_trade.offer_contract_command))
+    app.add_handler(CommandHandler("acceptcontract", economy_trade.accept_contract_command))
+    app.add_handler(CommandHandler("mycontracts", economy_trade.my_contracts_command))
+    app.add_handler(CommandHandler("proposepartnership", economy_partnership.propose_partnership_command))
+    app.add_handler(CommandHandler("acceptpartnership", economy_partnership.accept_partnership_command))
+    app.add_handler(CommandHandler("rejectpartnership", economy_partnership.reject_partnership_command))
+    app.add_handler(CommandHandler("mypartnerships", economy_partnership.my_partnerships_command))
 
     # اقتصاد داخلی
     app.add_handler(CommandHandler("balance", balance_command))

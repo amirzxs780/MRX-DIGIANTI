@@ -211,6 +211,38 @@ class IntegrationHooksTest(unittest.TestCase):
         with self.assertRaises(economy_treasury.TreasuryError):
             economy_infrastructure.fund_from_treasury(CHAT, key, 5000)
 
+    def test_stock_trading_fee_reaches_treasury_without_changing_user_cost(self):
+        import economy_business
+        import economy_stock
+        b = {
+            "id": economy_business._new_id(CHAT, UID), "type": "shop", "level": 1, "employees": 0,
+            "inventory": 0, "price_mult": 1.0, "ad_until": None,
+            "last_collect_ts": time.time(), "last_tax_ts": time.time(), "purchased_ts": time.time(),
+            "lifetime_revenue": 0, "lifetime_expense": 0, "history": [],
+            "debt": 0, "crisis_strikes": 0, "bankrupt": False, "partners": {}, "branches": 1,
+        }
+        economy_business.owned(CHAT, UID).append(b)
+        company = arun(economy_stock.go_public(CHAT, UID, b["id"]))
+
+        investor = 777
+        arun(economy_core.add_coins(CHAT, investor, 1_000_000, kind="REWARD"))
+        wallet_before = economy_core.get_wallet(CHAT, investor)
+        treasury_before = economy_treasury.get_balance(CHAT)
+
+        result = arun(economy_stock.buy_shares(CHAT, investor, company["id"], 10))
+
+        # هزینه‌ی سهامدار دقیقاً همونیه که buy_shares برمی‌گردونه - بدونِ تغییر
+        self.assertEqual(economy_core.get_wallet(CHAT, investor), wallet_before - result["cost"])
+        # و کارمزدش به خزانه رسیده (نه گم شده)
+        self.assertGreater(economy_treasury.get_balance(CHAT), treasury_before)
+
+    def test_bulk_trade_fee_reaches_treasury(self):
+        import economy_trade
+        arun(economy_core.add_coins(CHAT, UID, 1_000_000, kind="REWARD"))
+        treasury_before = economy_treasury.get_balance(CHAT)
+        arun(economy_trade.bulk_buy(CHAT, UID, "food", 50))
+        self.assertGreater(economy_treasury.get_balance(CHAT), treasury_before)
+
 
 class FormattersTest(unittest.TestCase):
     def setUp(self):

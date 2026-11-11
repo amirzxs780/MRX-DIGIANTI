@@ -215,13 +215,25 @@ async def buy_shares(chat_id: int, uid: int, company_id: int, qty: int) -> dict:
 
     price = c["share_price"]
     fee_pct = getattr(config, "STOCK_TRADING_FEE_PERCENT", 0.015)
-    cost = round(qty * price * (1 + fee_pct))
+    base_cost = qty * price
+    cost = round(base_cost * (1 + fee_pct))
     await economy_core.remove_coins(
         chat_id, uid, cost, kind="stock_buy", note=f"خریدِ سهامِ شرکت #{company_id}"
     )
     c["treasury_shares"] -= qty
     _holdings[chat_id][company_id][uid] = _holdings[chat_id][company_id].get(uid, 0.0) + qty
     _apply_price_impact(chat_id, company_id, qty * price, direction=+1)
+    # فاز ۱۰ V18 (تکمیلِ بخشِ ۱۰: مالیاتِ معاملات) — کارمزدی که همیشه از
+    # خریدار گرفته می‌شد، قبلاً هیچ مقصدی نداشت؛ الان به خزانه‌ی عمومی
+    # می‌ره. مبلغی که خریدار پرداخت می‌کنه هیچ تغییری نکرد.
+    fee_amount = cost - round(base_cost)
+    if fee_amount > 0:
+        try:
+            import economy_treasury
+            economy_treasury.deposit(chat_id, fee_amount, source="مالیاتِ معاملاتِ بورس",
+                                      note=f"خریدِ سهامِ شرکت #{company_id}")
+        except Exception as e:
+            logger.warning(f"واریزِ کارمزدِ بورس به خزانه ناموفق بود: {e}")
     return {"qty": qty, "cost": cost, "price": price}
 
 
@@ -245,6 +257,14 @@ async def sell_shares(chat_id: int, uid: int, company_id: int, qty: int) -> dict
     await economy_core.add_coins(
         chat_id, uid, proceeds, kind="stock_sell", note=f"فروشِ سهامِ شرکت #{company_id}"
     )
+    fee_amount = round(gross) - proceeds
+    if fee_amount > 0:
+        try:
+            import economy_treasury
+            economy_treasury.deposit(chat_id, fee_amount, source="مالیاتِ معاملاتِ بورس",
+                                      note=f"فروشِ سهامِ شرکت #{company_id}")
+        except Exception as e:
+            logger.warning(f"واریزِ کارمزدِ بورس به خزانه ناموفق بود: {e}")
     return {"qty": qty, "proceeds": proceeds, "price": price}
 
 
