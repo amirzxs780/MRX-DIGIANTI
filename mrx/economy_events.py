@@ -145,6 +145,25 @@ def demand_multiplier(chat_id: int) -> float:
     return _multiplier_for(chat_id, "demand_multiplier")
 
 
+def commodity_price_multiplier(chat_id: int) -> float:
+    """فاز ۱۳ V18 — قیمتِ زنده‌ی کالاهایِ economy_supply (فازِ۲) رو تحتِ تأثیر
+    قرار می‌ده: کمبودِ موادِ اولیه (بالا) یا کاهشِ قیمتِ کالاها (پایین).
+    مستقل از عرضه/تقاضایِ واقعیِ ثبت‌شده، یه شوکِ بیرونیِ موقته."""
+    return _multiplier_for(chat_id, "commodity_price_multiplier")
+
+
+def housing_price_multiplier(chat_id: int) -> float:
+    """فاز ۱۳ V18 — مولتیپلایرِ زنده‌ی بازارِ مسکنِ economy_housing (فازِ۶)
+    رو تحتِ تأثیر قرار می‌ده (رونقِ بازارِ مسکن)."""
+    return _multiplier_for(chat_id, "housing_price_multiplier")
+
+
+def tourism_multiplier(chat_id: int) -> float:
+    """فاز ۱۳ V18 — درآمدِ کسب‌وکارهایِ گردشگری‌محور (هتل/مرکزِ تفریحی) رو
+    تحتِ تأثیر قرار می‌ده (رونقِ گردشگری)."""
+    return _multiplier_for(chat_id, "tourism_multiplier")
+
+
 # ---------------------------------------------------------------------------
 # 📋 نمایش / Admin
 # ---------------------------------------------------------------------------

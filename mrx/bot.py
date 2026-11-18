@@ -106,6 +106,10 @@ import economy_treasury
 import economy_trade
 # فاز ۹ V18 — قراردادهایِ شراکت: سهمِ سودِ مستقیم در یه کسب‌وکارِ مشخص
 import economy_partnership
+# فاز ۱۱ V18 — هوشِ اقتصادی و تحلیل (بدون State خودش)
+import economy_analysis
+# فاز ۱۵ V18 — استخدامِ کاربرانِ واقعی (تکمیلِ بخشِ۹)
+import economy_employment
 import economy_shop2
 import economy_balance
 import economy_antiabuse
@@ -493,6 +497,7 @@ async def save_state():
         economy_infrastructure.save_state(),
         economy_treasury.save_state(),
         economy_trade.save_state(),
+        economy_employment.save_state(),
         economy_partnership.save_state(),
         poll_engine.save_state(),
         purge_engine.save_state(),
@@ -541,6 +546,7 @@ def load_state():
     economy_infrastructure.load_state()
     economy_treasury.load_state()
     economy_trade.load_state()
+    economy_employment.load_state()
     economy_partnership.load_state()
     poll_engine.load_state()
     purge_engine.load_state()
@@ -8129,6 +8135,12 @@ PERSIAN_COMMAND_ALIASES = {
     "تبلیغات": economy_business.advertise_command,
     "ارتقای کسب‌وکار": economy_business.upgrade_business_command,
     "توسعه شعبه": economy_business.expand_branch_command,
+    "پیشنهاد انتقال کسب‌وکار": economy_business.propose_transfer_command,
+    "قبول انتقال کسب‌وکار": economy_business.accept_transfer_command,
+    "لغو انتقال کسب‌وکار": economy_business.cancel_transfer_command,
+    "واریز به حساب کسب‌وکار": economy_business.deposit_to_business_command,
+    "برداشت از حساب کسب‌وکار": economy_business.withdraw_from_business_command,
+    "تنظیم واریز سود": economy_business.set_profit_routing_command,
     "مالیات کسب‌وکار": economy_business.pay_business_tax_command,
     "پرداخت بدهی": economy_business.pay_debt_command,
     "سود کسب‌وکار": economy_business.business_profit_command,
@@ -8183,6 +8195,17 @@ PERSIAN_COMMAND_ALIASES = {
     "رد شراکت": economy_partnership.reject_partnership_command,
     "شراکت‌های من": economy_partnership.my_partnerships_command,
     "شراکت های من": economy_partnership.my_partnerships_command,
+
+    # 🧠 هوشِ اقتصادی (economy_analysis) — فاز ۱۱ V18
+    "تحلیل اقتصادی": economy_analysis.analysis_command,
+
+    # 👔 استخدامِ کاربرانِ واقعی (economy_employment) — فاز ۱۵ V18
+    "درخواست استخدام": economy_employment.apply_job_command,
+    "پذیرش استخدام": economy_employment.accept_job_command,
+    "رد استخدام": economy_employment.reject_job_command,
+    "اخراج کارمند": economy_employment.fire_real_employee_command,
+    "درخواست‌های استخدام من": economy_employment.my_job_applications_command,
+    "درخواست های استخدام من": economy_employment.my_job_applications_command,
 
     # اقتصاد پیشرفته (economy_engine)
     "تراکنش ها": economy_engine.transactions_command,
@@ -8345,6 +8368,14 @@ PERSIAN_COMMAND_ALIASES = {
     "بررسی تراکنش": economy_admin.lookup_transaction_command,
     "برگشت تراکنش": economy_admin.rollback_transaction_command,
     "گزارش ادمین": economy_admin.admin_log_command,
+    "تراکنش‌های مشکوک": economy_admin.suspicious_transactions_command,
+    "تراکنش های مشکوک": economy_admin.suspicious_transactions_command,
+    "شرکت‌های گروه": economy_admin.group_businesses_command,
+    "شرکت های گروه": economy_admin.group_businesses_command,
+    "بدهی‌های گروه": economy_admin.group_debts_command,
+    "بدهی های گروه": economy_admin.group_debts_command,
+    "تنظیم نرخ سود بانک": economy_admin.set_interest_rate_command,
+    "تنظیم حداقل اعتبار وام": economy_admin.set_credit_rule_command,
     "راهنمای اقتصاد": economy_admin.economy_help_command,
 
     # پاسخ‌دهی خودکار (autoreply_engine) — روشن/خاموش کلی همچنان با «پاسخ خودکار روشن/خاموش»
@@ -8554,6 +8585,12 @@ def main():
     app.add_handler(CommandHandler("advertise", economy_business.advertise_command))
     app.add_handler(CommandHandler("upgradebusiness", economy_business.upgrade_business_command))
     app.add_handler(CommandHandler("expandbranch", economy_business.expand_branch_command))
+    app.add_handler(CommandHandler("proposetransfer", economy_business.propose_transfer_command))
+    app.add_handler(CommandHandler("accepttransfer", economy_business.accept_transfer_command))
+    app.add_handler(CommandHandler("canceltransfer", economy_business.cancel_transfer_command))
+    app.add_handler(CommandHandler("depositbusiness", economy_business.deposit_to_business_command))
+    app.add_handler(CommandHandler("withdrawbusiness", economy_business.withdraw_from_business_command))
+    app.add_handler(CommandHandler("setprofitrouting", economy_business.set_profit_routing_command))
     app.add_handler(CommandHandler("businesstax", economy_business.pay_business_tax_command))
     app.add_handler(CommandHandler("paydebt", economy_business.pay_debt_command))
     app.add_handler(CommandHandler("businessprofit", economy_business.business_profit_command))
@@ -8587,6 +8624,12 @@ def main():
     app.add_handler(CommandHandler("acceptpartnership", economy_partnership.accept_partnership_command))
     app.add_handler(CommandHandler("rejectpartnership", economy_partnership.reject_partnership_command))
     app.add_handler(CommandHandler("mypartnerships", economy_partnership.my_partnerships_command))
+    app.add_handler(CommandHandler("analysis", economy_analysis.analysis_command))
+    app.add_handler(CommandHandler("applyjob", economy_employment.apply_job_command))
+    app.add_handler(CommandHandler("acceptjob", economy_employment.accept_job_command))
+    app.add_handler(CommandHandler("rejectjob", economy_employment.reject_job_command))
+    app.add_handler(CommandHandler("firerealemployee", economy_employment.fire_real_employee_command))
+    app.add_handler(CommandHandler("myjobapplications", economy_employment.my_job_applications_command))
 
     # اقتصاد داخلی
     app.add_handler(CommandHandler("balance", balance_command))
@@ -8722,6 +8765,11 @@ def main():
     app.add_handler(CommandHandler("txlookup", economy_admin.lookup_transaction_command))
     app.add_handler(CommandHandler("txrollback", economy_admin.rollback_transaction_command))
     app.add_handler(CommandHandler("adminlog", economy_admin.admin_log_command))
+    app.add_handler(CommandHandler("suspicioustx", economy_admin.suspicious_transactions_command))
+    app.add_handler(CommandHandler("groupbusinesses", economy_admin.group_businesses_command))
+    app.add_handler(CommandHandler("groupdebts", economy_admin.group_debts_command))
+    app.add_handler(CommandHandler("setinterestrate", economy_admin.set_interest_rate_command))
+    app.add_handler(CommandHandler("setcreditmin", economy_admin.set_credit_rule_command))
     app.add_handler(CommandHandler("economyhelp", economy_admin.economy_help_command))
 
     # پنل ویژه‌ی ادمین: سکه/XP/لول (تکی یا همه) + تنظیمات اقتصاد/فروشگاه

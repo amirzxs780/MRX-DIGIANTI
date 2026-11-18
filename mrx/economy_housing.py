@@ -132,11 +132,22 @@ def record_sale(chat_id: int, district_key: str, qty: int = 1) -> None:
     _pressure[chat_id][district_key]["supply"] += float(qty)
 
 
+def _event_multiplier(chat_id: int) -> float:
+    try:
+        # فاز ۱۳ V18 — شوکِ موقتِ رویدادها (افزایشِ قیمتِ مسکن)؛ رویِ Stateِ
+        # پایه ذخیره نمی‌شه، فقط لحظه‌یِ خوندن اعمال می‌شه.
+        import economy_events
+        return economy_events.housing_price_multiplier(chat_id)
+    except Exception:
+        return 1.0
+
+
 def get_multiplier(chat_id: int, district_key: str) -> float:
     if district_key not in _districts():
         return 1.0
     _ensure_ticked(chat_id)
-    return round(_multipliers[chat_id].get(district_key, 1.0), 4)
+    mult = _multipliers[chat_id].get(district_key, 1.0) * _event_multiplier(chat_id)
+    return round(mult, 4)
 
 
 def _zone_label(mult: float) -> str:
@@ -154,7 +165,7 @@ def _zone_label(mult: float) -> str:
 
 def get_status(chat_id: int, district_key: str) -> dict:
     _ensure_ticked(chat_id)
-    mult = _multipliers[chat_id].get(district_key, 1.0)
+    mult = _multipliers[chat_id].get(district_key, 1.0) * _event_multiplier(chat_id)
     hist = _history[chat_id].get(district_key, [])
     if len(hist) >= 2:
         trend = "📈" if hist[-1] > hist[-2] else ("📉" if hist[-1] < hist[-2] else "➖")
@@ -179,7 +190,8 @@ def housing_price_index(chat_id: int) -> float:
     mults = list(_multipliers[chat_id].values())
     if not mults:
         return 100.0
-    return round(sum(mults) / len(mults) * 100, 2)
+    event_mult = _event_multiplier(chat_id)
+    return round(sum(mults) / len(mults) * event_mult * 100, 2)
 
 
 def format_housing_text(chat_id: int) -> str:

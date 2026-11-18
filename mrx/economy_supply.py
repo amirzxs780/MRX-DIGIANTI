@@ -164,11 +164,23 @@ def record_supply(chat_id: int, key: str, qty: float = 1.0) -> None:
     _total_supply[chat_id][key] += qty
 
 
+def _event_multiplier(chat_id: int) -> float:
+    try:
+        # فاز ۱۳ V18 — شوکِ موقتِ رویدادها (کمبودِ موادِ اولیه/کاهشِ قیمتِ کالاها).
+        # عمداً رویِ _prices ذخیره‌شده اعمال نمی‌شه (اون State پایه‌ست)؛ فقط
+        # لحظه‌یِ خوندنِ قیمت (برایِ معامله یا نمایش) ضرب می‌شه، که با پایانِ
+        # رویداد خودکار برمی‌گرده به حالتِ عادی.
+        import economy_events
+        return economy_events.commodity_price_multiplier(chat_id)
+    except Exception:
+        return 1.0
+
+
 def get_price(chat_id: int, key: str) -> float:
     if key not in COMMODITIES:
         raise UnknownCommodityError(f"کالای ناشناخته: {key}")
     _ensure_ticked(chat_id)
-    return round(_prices[chat_id][key], 2)
+    return round(_prices[chat_id][key] * _event_multiplier(chat_id), 2)
 
 
 def is_shortage(chat_id: int, key: str) -> bool:
@@ -185,7 +197,7 @@ def get_status(chat_id: int, key: str) -> dict:
         raise UnknownCommodityError(f"کالای ناشناخته: {key}")
     _ensure_ticked(chat_id)
     info = COMMODITIES[key]
-    price = _prices[chat_id][key]
+    price = _prices[chat_id][key] * _event_multiplier(chat_id)
     base = float(info["base_price"])
     change_pct = ((price - base) / base) * 100 if base else 0.0
     hist = _history[chat_id][key]
@@ -229,11 +241,12 @@ def price_index(chat_id: int) -> float:
     _ensure_ticked(chat_id)
     if not COMMODITIES:
         return 100.0
+    mult = _event_multiplier(chat_id)
     ratios = []
     for key, info in COMMODITIES.items():
         base = float(info["base_price"])
         if base:
-            ratios.append(_prices[chat_id][key] / base)
+            ratios.append((_prices[chat_id][key] * mult) / base)
     if not ratios:
         return 100.0
     return round(sum(ratios) / len(ratios) * 100, 2)

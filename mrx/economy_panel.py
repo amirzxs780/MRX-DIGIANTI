@@ -69,6 +69,8 @@ import economy_infrastructure
 import economy_treasury
 import economy_trade
 import economy_partnership
+import economy_analysis
+import economy_employment
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +121,49 @@ def _mark(ok: bool) -> str:
     return "✅" if ok else "❌"
 
 
+def _personal_dashboard_lines(chat_id: int, uid: int) -> list[str]:
+    """فاز ۱۴ V18 (بخشِ۱۵: «داشبوردِ اصلی») - موجودیِ کیف‌پول/بانک، ارزشِ کلِ
+    دارایی‌ها، مجموعِ بدهی‌ها، ارزشِ خالص، درآمد/هزینه/سودِ روزانه،
+    دارایی‌هایِ فعال، تعدادِ شرکت‌ها/املاک، وضعیتِ سرمایه‌گذاری - همه از
+    همون توابعِ تست‌شده‌ی economy_accounting/economy_stock (بدونِ منطقِ
+    محاسباتیِ تازه، صرفاً اسمبل‌کردن)."""
+    wallet = economy_core.get_wallet(chat_id, uid)
+    bank = economy_core.get_bank_balance(chat_id, uid)
+
+    statement = economy_accounting.full_statement(chat_id, uid, period="روزانه")
+    assets = statement["assets"]
+    liabilities = statement["liabilities"]
+
+    businesses = economy_business.owned(chat_id, uid)
+    properties = economy_property.owned(chat_id, uid)
+    try:
+        vehicles = economy_vehicle.owned(chat_id, uid)
+    except Exception:
+        vehicles = []
+    active_assets = len(businesses) + len(properties) + len(vehicles)
+
+    try:
+        portfolio_value = economy_stock.portfolio_value(chat_id, uid)
+        holdings_count = len(economy_stock.holdings_of(chat_id, uid))
+    except Exception:
+        portfolio_value, holdings_count = 0, 0
+    invest_line = (
+        f"{holdings_count} شرکت، ارزش {_fmt(portfolio_value)}" if holdings_count else "فعلاً هیچ سهمی نداری"
+    )
+
+    return [
+        f"{_tier_badge(wallet)} کیف پول: {_fmt(wallet)} {config.CURRENCY_NAME}",
+        f"{_tier_badge(bank)} بانک: {_fmt(bank)} {config.CURRENCY_NAME}",
+        f"💼 ارزشِ کلِ دارایی‌ها: {_fmt(assets['gross_net_worth'])}",
+        f"💳 مجموعِ بدهی‌ها: {_fmt(liabilities['total_liabilities'])}",
+        f"💎 ارزشِ خالصِ ثروت: {_fmt(statement['real_net_worth'])}",
+        f"📈 درآمدِ امروز: {_fmt(statement['total_income'])} — 📉 هزینه‌ی امروز: {_fmt(statement['total_expense'])}",
+        f"{'✅' if statement['net'] >= 0 else '🔻'} سودِ خالصِ امروز: {_fmt(statement['net'])}",
+        f"🏷 دارایی‌هایِ فعال: {active_assets} (🏢{len(businesses)} شرکت، 🏠{len(properties)} ملک، 🚗{len(vehicles)} خودرو)",
+        f"📊 وضعیتِ سرمایه‌گذاری: {invest_line}",
+    ]
+
+
 def _net_worth_line(total: int) -> str:
     """یه خط پایانی که با رشد دارایی کاربر عوض می‌شه."""
     if total >= 1_000_000:
@@ -146,56 +191,161 @@ def _section(label: str) -> str:
 #   نوع "act" → یه اکشن فوری که نتیجه‌اش پیام جدیدشه (ecop:<مقدار>)
 
 CATEGORIES: dict[str, dict] = {
-    "earn": {
-        "title": "💼 کار، ماموریت و درآمد",
-        "desc": "شغل انتخاب کن، کار کن، پاداش روزانه بگیر و ماموریت‌هات رو ببین.",
+    # فاز ۱۴ V18 (بخشِ۱۵) — نقشه‌ی اصلیِ پنل به ۱۸ دسته‌ی خواسته‌شده بازطراحی
+    # شد. هیچ دکمه‌ی قدیمی حذف/جابه‌جا-با-تغییرِ sec نشده؛ فقط دسته‌بندیِ
+    # بیرونی عوض شده. کلیدهایِ قدیمیِ ۷گانه (earn/money/shop/assets/life/
+    # risk/stats) که ممکنه توی پیام‌هایِ قدیمیِ تلگرام هنوز به‌صورتِ
+    # callback_data=ecop:cat:<قدیمی> باقی مونده باشن، با _LEGACY_CATEGORY_ALIASES
+    # پایین‌تر به معادلِ جدیدشون Redirect می‌شن - هیچ دکمه‌ی قدیمی نمی‌شکنه.
+    "dash": {
+        "title": "🏠 داشبورد اقتصادی",
+        "desc": "وضعیتِ کاملِ مالیِ خودت و کلِ اقتصادِ گروه رو یه‌جا ببین.",
         "items": [
-            ("🎁 پاداش روزانه", "act", "daily"),
-            ("🛒 پیشنهاد ویژه‌ی امروز", "act", "deal"),
-            ("💼 شغل‌ها و کار کردن", "sec", "jobs"),
-            ("🎯 ماموریت‌های من", "act", "missions"),
+            ("📊 داشبورد شخصی", "sec", "dashboard"),
+            ("🌍 داشبورد اقتصاد گروه", "sec", "group_dashboard"),
         ],
     },
-    "money": {
-        "title": "🏦 بانک و بازار سرمایه",
-        "desc": "پولت رو امن نگه دار، سود بگیر یا توی بازار معامله کن.",
+    "wallet_assets": {
+        "title": "💰 کیف پول و دارایی",
+        "desc": "ارزشِ خالصِ ثروتت رو ببین.",
+        "items": [
+            ("💎 ارزش خالص من", "act", "ach"),
+        ],
+    },
+    "bank_credit": {
+        "title": "🏦 بانک و اعتبار",
+        "desc": "سپرده، وام، رتبه‌ی اعتباری و خزانه‌ی عمومیِ گروه.",
         "items": [
             ("🏦 بانک (سپرده/برداشت/سود)", "sec", "bank"),
-            ("📈 بازار و ترید", "sec", "market"),
-            ("🏢 بورس سهام شرکت‌ها", "sec", "stock"),
-            ("🔨 مزایده‌ها", "sec", "auction"),
-            ("🚚 تجارت عمده و قراردادها", "sec", "trade"),
+            ("🏛 خزانه‌ی عمومی گروه", "sec", "treasury"),
         ],
     },
-    "shop": {
-        "title": "🛍 فروشگاه‌ها و خرید",
-        "desc": "آیتم، لباس و کالاهای ویژه بخر.",
+    "invest": {
+        "title": "📈 بورس و سرمایه‌گذاری",
+        "desc": "بازارِ دارایی‌هایِ انتزاعی و بورسِ سهامِ شرکت‌ها.",
+        "items": [
+            ("📈 بازار و ترید", "sec", "market"),
+            ("🏢 بورس سهام شرکت‌ها", "sec", "stock"),
+        ],
+    },
+    "biz": {
+        "title": "🏢 شرکت‌ها و کسب‌وکارها",
+        "desc": "کسب‌وکارت رو مدیریت کن یا یه شریکِ جدید بیار.",
+        "items": [
+            ("🏢 کسب‌وکارها", "sec", "business"),
+            ("🤝 پیشنهادهایِ شراکت", "sec", "partnership"),
+        ],
+    },
+    "realestate": {
+        "title": "🏠 املاک و مستغلات",
+        "desc": "ملک، بازارِ مسکنِ گروه و خودروهات.",
+        "items": [
+            ("🏠 املاک", "sec", "prop"),
+            ("🏘 بازار مسکن گروه", "sec", "housing"),
+            ("🚗 خودروها", "sec", "vehicle"),
+        ],
+    },
+    "city_infra": {
+        "title": "🏙 شهر و زیرساخت",
+        "desc": "شهرِ شخصیت، منطقه‌ی زندگی و زیرساختِ مشترکِ گروه.",
+        "items": [
+            ("🏙 شهر من", "sec", "city"),
+            ("🗺 منطقه‌ی زندگی", "sec", "district"),
+            ("🏗 زیرساخت شهری گروه", "sec", "infra"),
+        ],
+    },
+    "jobs_hiring": {
+        "title": "💼 مشاغل و استخدام",
+        "desc": "شغل انتخاب کن و کار کن.",
+        "items": [
+            ("💼 شغل‌ها و کار کردن", "sec", "jobs"),
+            ("👔 درخواست‌هایِ استخدام", "sec", "employment"),
+        ],
+    },
+    "shop_market": {
+        "title": "🛒 فروشگاه و بازار",
+        "desc": "خرید و قیمتِ زنده‌ی کالاهای اقتصاد.",
         "items": [
             ("🛍 فروشگاه اصلی", "sec", "shop"),
             ("👔 فروشگاه لباس", "sec", "clothing"),
             ("🖤 بازار سیاه", "sec", "black"),
+            ("📦 قیمتِ زنده‌ی کالاها", "sec", "commodities"),
         ],
     },
-    "assets": {
-        "title": "🏠 دارایی و سرمایه‌گذاری",
-        "desc": "املاک، خودرو، کسب‌وکار، شهر و منطقه‌ی زندگیت رو مدیریت کن.",
+    "trade_biz": {
+        "title": "🚚 تجارت و بازرگانی",
+        "desc": "خرید/فروشِ عمده و قراردادهایِ تأمینِ کالا با کاربرانِ دیگه.",
         "items": [
-            ("🏠 املاک", "sec", "prop"),
-            ("🚗 خودروها", "sec", "vehicle"),
-            ("🏢 کسب‌وکارها", "sec", "business"),
-            ("🤝 پیشنهادهایِ شراکت", "sec", "partnership"),
-            ("🏙 شهر من", "sec", "city"),
-            ("🗺 منطقه‌ی زندگی", "sec", "district"),
-            ("🏘 بازار مسکن گروه", "sec", "housing"),
-            ("🏗 زیرساخت شهری گروه", "sec", "infra"),
-            ("🏛 خزانه‌ی عمومی گروه", "sec", "treasury"),
+            ("🚚 تجارت عمده و قراردادها", "sec", "trade"),
         ],
     },
-    "life": {
-        "title": "🐾 سبک زندگی",
-        "desc": "کوله‌پشتی، پت و زندگی مشترکت.",
+    "warehouse": {
+        "title": "📦 انبار و تولید",
+        "desc": "کوله‌پشتی و وسایلت.",
         "items": [
             ("🎒 کوله‌پشتی", "sec", "inv"),
+        ],
+    },
+    "contracts": {
+        "title": "📜 قراردادها",
+        "desc": "قراردادهایِ تجاری که با کاربرانِ دیگه بستی یا پیشنهاد دادی.",
+        "items": [
+            ("📜 قراردادهای تجاری من", "sec", "trade"),
+        ],
+    },
+    "auctions": {
+        "title": "🔨 مزایده‌ها",
+        "desc": "مزایده بذار، پیشنهاد بده یا برنده‌هات رو ببین.",
+        "items": [
+            ("🔨 مزایده‌ها", "sec", "auction"),
+        ],
+    },
+    "accounting_tax": {
+        "title": "🧾 حسابداری و مالیات",
+        "desc": "صورت‌حسابِ مالی و تحلیلِ اقتصادیِ شخصیت.",
+        "items": [
+            ("🧾 صورت‌حساب مالی", "sec", "statement"),
+            ("🧠 تحلیل اقتصادی", "sec", "analysis"),
+        ],
+    },
+    "missions_eco": {
+        "title": "🎯 ماموریت‌های اقتصادی",
+        "desc": "پاداشِ روزانه، پیشنهادِ ویژه و ماموریت‌هات.",
+        "items": [
+            ("🎁 پاداش روزانه", "act", "daily"),
+            ("🛒 پیشنهاد ویژه‌ی امروز", "act", "deal"),
+            ("🎯 ماموریت‌های من", "act", "missions"),
+        ],
+    },
+    "news_events": {
+        "title": "🌍 اخبار و رویدادهای اقتصادی",
+        "desc": "رویدادِ فعلیِ اقتصاد و وضعیتِ کلانِ گروه.",
+        "items": [
+            ("🌍 رویدادِ اقتصادیِ فعلی", "sec", "events"),
+            ("📊 اقتصاد کلان گروه", "sec", "macro"),
+        ],
+    },
+    "ranking": {
+        "title": "🏆 رتبه‌بندی و رقابت",
+        "desc": "ببین کجای این گروه وایستادی.",
+        "items": [
+            ("👑 جدول رتبه‌بندی‌ها", "sec", "lb"),
+        ],
+    },
+    "charts_stats": {
+        "title": "📊 آمار و نمودارها",
+        "desc": "داشبوردِ گروهی با همه‌ی شاخص‌ها و نمودارها.",
+        "items": [
+            ("🌍 داشبورد اقتصاد گروه", "sec", "group_dashboard"),
+        ],
+    },
+    # این دو دسته جزوِ ۱۸‌تایِ بخشِ۱۵ نیستن (اون بخش فقط مخصوصِ خودِ
+    # «اقتصاد»ه) - برایِ اینکه هیچ قابلیتِ موجودِ V17 (پت/ازدواج/بازی/
+    # دنیای‌زیرزمینی/دزدی) حذف یا بی‌خانمان نشه، همینجا نگه داشته شدن.
+    "life": {
+        "title": "🐾 سبک زندگی",
+        "desc": "پت و زندگی مشترکت.",
+        "items": [
             ("🐾 پت", "sec", "pet"),
             ("💍 ازدواج", "sec", "marriage"),
         ],
@@ -209,19 +359,25 @@ CATEGORIES: dict[str, dict] = {
             ("🦹 دزدی و زندان", "sec", "theft"),
         ],
     },
-    "stats": {
-        "title": "🏆 آمار، رتبه و دستاوردها",
-        "desc": "ببین کجای این گروه وایستادی.",
-        "items": [
-            ("💎 ارزش خالص من", "act", "ach"),
-            ("👑 جدول رتبه‌بندی‌ها", "sec", "lb"),
-            ("📊 اقتصاد کلان گروه", "sec", "macro"),
-            ("🧾 صورت‌حساب مالی", "sec", "statement"),
-        ],
-    },
 }
 
-CATEGORY_ORDER = ["earn", "money", "shop", "assets", "life", "risk", "stats"]
+# کلیدهای قدیمیِ ۷گانه (قبل از بازطراحیِ بخشِ۱۵) → معادلِ جدیدشون. دکمه‌ای
+# که قبلاً ecop:cat:<قدیمی> ساخته شده، همچنان کار می‌کنه.
+_LEGACY_CATEGORY_ALIASES: dict[str, str] = {
+    "earn": "jobs_hiring",
+    "money": "bank_credit",
+    "shop": "shop_market",
+    "assets": "biz",
+    "stats": "ranking",
+    # "life" و "risk" کلیدشون عوض نشده، نیازی به Alias ندارن.
+}
+
+CATEGORY_ORDER = [
+    "dash", "wallet_assets", "bank_credit", "invest", "biz", "realestate",
+    "city_infra", "jobs_hiring", "shop_market", "trade_biz", "warehouse",
+    "contracts", "auctions", "accounting_tax", "missions_eco", "news_events",
+    "ranking", "charts_stats", "life", "risk",
+]
 
 SECTION_CATEGORY: dict[str, str] = {}
 for _cat_key, _cat in CATEGORIES.items():
@@ -249,15 +405,26 @@ def _category_back_row() -> list:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _hub_text(chat_id: int, uid: int) -> str:
-    wallet = economy_core.get_wallet(chat_id, uid)
-    bank = economy_core.get_bank_balance(chat_id, uid)
-    total = wallet + bank
+    """فاز ۱۴ V18 — صفحه‌ی اصلیِ پنل، طبقِ بخشِ۱۵ («DIGNANTI ECONOMY CONTROL
+    CENTER») حالا خودش داشبوردِ کاملِ شخصیه، نه فقط دو تا عدد."""
+    try:
+        dashboard_lines = _personal_dashboard_lines(chat_id, uid)
+        total = economy_core.get_net_worth(chat_id, uid)
+    except Exception as e:
+        logger.warning(f"ساختِ داشبوردِ کامل ناموفق بود، نسخه‌ی ساده نشون داده می‌شه: {e}")
+        wallet = economy_core.get_wallet(chat_id, uid)
+        bank = economy_core.get_bank_balance(chat_id, uid)
+        total = wallet + bank
+        dashboard_lines = [
+            f"{_tier_badge(wallet)} کیف پول: {_fmt(wallet)} {config.CURRENCY_NAME}",
+            f"{_tier_badge(bank)} بانک: {_fmt(bank)} {config.CURRENCY_NAME}",
+        ]
+    body = "\n".join(dashboard_lines)
     return (
         "╭━━━━━━━━━━━━━━━━━━━━╮\n"
-        "   🛍 پنل اقتصاد\n"
+        "   🏛 DIGNANTI ECONOMY CONTROL CENTER\n"
         "╰━━━━━━━━━━━━━━━━━━━━╯\n\n"
-        f"{_tier_badge(wallet)} کیف پول: {_fmt(wallet)} {config.CURRENCY_NAME}\n"
-        f"{_tier_badge(bank)} بانک: {_fmt(bank)} {config.CURRENCY_NAME}\n\n"
+        f"{body}\n\n"
         f"{_net_worth_line(total)}\n\n"
         "یه دسته رو انتخاب کن، بعد از توی هر بخش با دکمه خرید/استفاده کن.\n"
         "اگه پول کافی نباشه، ربات بهت می‌گه و چیزی کم نمی‌شه."
@@ -1291,6 +1458,105 @@ async def _render_partnership(chat_id: int, uid: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 🧠 تحلیلِ اقتصادی (فاز ۱۱ V18) — نمایشی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_analysis(chat_id: int, uid: int):
+    text = economy_analysis.format_insights_text(chat_id, uid)
+    rows = [_back_row("analysis")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🏠 داشبوردِ اقتصادی (فاز ۱۴ V18 — بخشِ۱۵) — شخصی + گروهی، + اخبار/بازارِ کالا
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_dashboard(chat_id: int, uid: int):
+    lines = ["📊 داشبوردِ اقتصادیِ من", "─────────────────"]
+    lines.extend(_personal_dashboard_lines(chat_id, uid))
+    rows = [_back_row("dashboard")]
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+async def _render_group_dashboard(chat_id: int, uid: int):
+    """داشبوردِ اقتصادِ گروه (بخشِ۱۵): حجمِ کلِ پول، ثروتِ کلِ کاربرها، تعداد/
+    ارزشِ شرکت‌ها، ارزشِ املاک، حجمِ معاملات، تورم، شاخصِ رونق، تعدادِ
+    کاربرانِ فعال، بزرگ‌ترین سرمایه‌گذار و شرکت - با توابعِ آماده‌ی
+    economy_macro/economy_admin/economy_stock اسمبل می‌شه، بدونِ محاسبه‌ی تازه."""
+    host = _host()
+    snap = economy_macro.get_snapshot(chat_id)
+
+    import economy_admin
+    biz_rows = economy_admin.list_group_businesses(chat_id)
+    total_business_value = sum(economy_business.current_value(b) for _, b in biz_rows)
+
+    members = host._known_members.get(chat_id, set())
+    total_property_value = 0
+    for member_uid in members:
+        for prop in economy_property.owned(chat_id, member_uid):
+            try:
+                total_property_value += economy_property.current_price(chat_id, member_uid, prop["type"])
+            except Exception:
+                pass
+
+    try:
+        top_investor = economy_stock.top_investors(chat_id, limit=1)
+    except Exception:
+        top_investor = []
+
+    lines = [
+        "🌍 داشبوردِ اقتصادِ گروه", "─────────────────",
+        f"💰 حجمِ کلِ پول: {_fmt(round(snap['money_supply']))} {config.CURRENCY_NAME}",
+        f"👥 کاربرانِ فعالِ اقتصادی: {snap['population']}",
+        f"🏢 تعدادِ شرکت‌ها: {len(biz_rows)} — ارزشِ کل: {_fmt(total_business_value)}",
+        f"🏠 ارزشِ کلِ املاک: {_fmt(total_property_value)}",
+        f"🧾 حجمِ معاملات: {snap['transaction_volume']:,}",
+        f"📈 نرخِ تورم: {snap['inflation_rate']*100:+.1f}٪ — وضعیت: {snap['status']}",
+        f"🌡 شاخصِ رونق: {snap['prosperity_index']}/۱۰۰",
+    ]
+    if biz_rows:
+        owner_uid, biggest = biz_rows[0]
+        info = economy_business.TYPES.get(biggest["type"], {"name": biggest["type"]})
+        lines.append(f"🏆 بزرگ‌ترین شرکت: {info.get('name', biggest['type'])} (مالک: {owner_uid})")
+    if top_investor:
+        inv_uid, inv_value = top_investor[0]
+        lines.append(f"💎 بزرگ‌ترین سرمایه‌گذار: کاربر {inv_uid} ({_fmt(inv_value)})")
+    rows = [_back_row("group_dashboard")]
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+async def _render_events(chat_id: int, uid: int):
+    import economy_events
+    ev = economy_events.get_active_event(chat_id)
+    lines = ["🌍 اخبار و رویدادهای اقتصادی", "─────────────────"]
+    if ev:
+        import time as _time
+        remaining = max(0, int((ev["ends_ts"] - _time.time()) // 60) + 1)
+        lines.append(f"{ev['label']} فعاله! ({remaining} دقیقه مونده)")
+    else:
+        lines.append("الان هیچ رویدادِ اقتصادیِ فعالی نیست.")
+    rows = [_back_row("events")]
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+async def _render_commodities(chat_id: int, uid: int):
+    import economy_supply
+    text = economy_supply.format_commodities_text(chat_id)
+    rows = [_back_row("commodities")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 👔 استخدامِ کاربرانِ واقعی (فاز ۱۵ V18) — نمایشی؛ درخواست/پذیرش با دستورِ متنی
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _render_employment(chat_id: int, uid: int):
+    text = economy_employment.format_pending_text(chat_id, uid)
+    rows = [_back_row("employment")]
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 🔀 جدول بخش‌ها
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1322,6 +1588,12 @@ _SECTION_RENDERERS = {
     "treasury": _render_treasury,
     "trade": _render_trade,
     "partnership": _render_partnership,
+    "analysis": _render_analysis,
+    "dashboard": _render_dashboard,
+    "group_dashboard": _render_group_dashboard,
+    "events": _render_events,
+    "commodities": _render_commodities,
+    "employment": _render_employment,
 }
 
 _SECTION_MODULE_KEY = {
@@ -1377,6 +1649,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if action == "cat":
             key = parts[1] if len(parts) > 1 else ""
+            key = _LEGACY_CATEGORY_ALIASES.get(key, key)  # دکمه‌های قدیمیِ قبل از بخشِ۱۵
             await query.answer()
             await _render_category(update, context, key)
             return

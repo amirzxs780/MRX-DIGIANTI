@@ -2290,7 +2290,18 @@ ECONOMY_EVENTS = {
     "inflation":       {"label": "📈 تورم",                "effect": "price_inflation_multiplier", "value": 1.25, "duration_minutes": 90},
     "demand_drop":     {"label": "🧺 کاهش تقاضا",          "effect": "demand_multiplier",       "value": 0.7, "duration_minutes": 60},
     "demand_surge":    {"label": "🔥 افزایش تقاضا",        "effect": "demand_multiplier",       "value": 1.4, "duration_minutes": 45},
+    # ---------- فاز ۱۳ V18 (تکمیلِ بخشِ۱۴): رویدادهایِ تازه، وصل‌شده به
+    # سیستم‌هایی که در فازِ۱۵ِ V17 هنوز وجود نداشتن (بازارِ کالا، بازارِ مسکن) ----------
+    "economic_boom":        {"label": "🚀 رونق اقتصادی",         "effect": "income_multiplier",           "value": 1.35, "duration_minutes": 60},
+    "tourism_boom":         {"label": "🏖 رونق گردشگری",          "effect": "tourism_multiplier",          "value": 1.5,  "duration_minutes": 90},
+    "housing_price_boom":   {"label": "🏘 افزایش قیمت مسکن",      "effect": "housing_price_multiplier",    "value": 1.3,  "duration_minutes": 90},
+    "commodity_price_drop": {"label": "📉 کاهش قیمت کالاها",      "effect": "commodity_price_multiplier",  "value": 0.8,  "duration_minutes": 60},
+    "raw_material_shortage": {"label": "🪨 کمبود مواد اولیه",    "effect": "commodity_price_multiplier",  "value": 1.3,  "duration_minutes": 60},
+    "cheap_transport":      {"label": "🚚 کاهش هزینه حمل‌ونقل",   "effect": "fuel_cost_multiplier",        "value": 0.7,  "duration_minutes": 60},
 }
+
+# کسب‌وکارهایی که رویدادِ «رونق گردشگری» درآمدشون رو تحتِ تأثیر قرار می‌ده
+BUSINESS_TOURISM_TYPES = ("hotel", "entertainment_center")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 🛒 SHOP 2.0 — فاز ۹ (Module 25)
@@ -2609,3 +2620,34 @@ ECONOMY_PARTNERSHIP_STATE_FILE = "economy_partnership_state.json"
 PARTNERSHIP_MAX_PARTNERS_PER_BUSINESS = 5
 PARTNERSHIP_MIN_OWNER_EQUITY = 0.10   # مالک همیشه باید حداقل ۱۰٪ سهم نگه داره
 PARTNERSHIP_MAX_PENDING_PER_USER = 5  # حداکثر پیشنهادِ شراکتِ معلق (به‌عنوانِ پیشنهاددهنده)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🧠 DIGNANTI V18 — فاز ۱۱ (هوشِ اقتصادی و تحلیل)
+# ═══════════════════════════════════════════════════════════════════════════
+
+ANALYSIS_LOW_INVENTORY_HOURS = 6   # اگه موجودیِ انبار کمتر از این ساعت دوام بیاره، هشدار می‌ده
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🛡 DIGNANTI V18 — فاز ۱۲ (تکمیلِ بخشِ ۱۶: پنلِ مدیریتِ اقتصاد)
+# ═══════════════════════════════════════════════════════════════════════════
+
+BANK_MIN_INTEREST_MULTIPLIER = 0.0
+BANK_MAX_INTEREST_MULTIPLIER = 3.0
+CREDIT_MIN_FOR_LOAN_FLOOR = 0
+CREDIT_MIN_FOR_LOAN_CEILING = 900
+
+ADMIN_SUSPICIOUS_TX_DEFAULT_THRESHOLD = 50000   # آستانه‌ی پیش‌فرضِ «تراکنشِ بزرگ» برای بررسیِ ادمین
+ADMIN_SUSPICIOUS_TX_LOOKBACK_DAYS = 3
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 👔 DIGNANTI V18 — فاز ۱۵ (تکمیلِ بخشِ ۹: استخدامِ کاربرانِ واقعی)
+# ═══════════════════════════════════════════════════════════════════════════
+
+ECONOMY_EMPLOYMENT_STATE_FILE = "economy_employment_state.json"
+EMPLOYMENT_MAX_PENDING_PER_USER = 5   # حداکثر درخواستِ استخدامِ معلقِ هم‌زمانِ هر کاربر (به‌عنوانِ متقاضی)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🏦 DIGNANTI V18 — فاز ۱۷ (تکمیلِ بخشِ ۳: حسابِ بانکیِ جداگانه برایِ کسب‌وکار)
+# ═══════════════════════════════════════════════════════════════════════════
+
+BUSINESS_PROFIT_ROUTING_OPTIONS = ("wallet", "account")

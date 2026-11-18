@@ -126,6 +126,8 @@ def hourly_revenue(chat_id: int, b: dict) -> float:
     try:
         import economy_events
         revenue *= economy_events.demand_multiplier(chat_id)  # ارتقای فاز ۱۵: کاهش/افزایش تقاضا
+        if b["type"] in getattr(config, "BUSINESS_TOURISM_TYPES", ("hotel", "entertainment_center")):
+            revenue *= economy_events.tourism_multiplier(chat_id)  # فاز ۱۳ V18 — رونقِ گردشگری
     except Exception:
         pass
     revenue *= b.get("branches", 1)  # فاز ۱۰ V18 — هر شعبه، ظرفیتِ تولید رو به همون نسبت چند برابر می‌کنه
@@ -195,6 +197,19 @@ def _simulate_period(chat_id: int, b: dict, elapsed_hours: float) -> tuple[float
     return revenue, expense, consumed
 
 
+async def _pay_owner_share(chat_id: int, uid: int, b: dict, amount: int) -> None:
+    """فاز ۱۷ V18 — طبقِ profit_routingِ کسب‌وکار، سودِ مالک یا مستقیم به
+    کیف‌پول می‌ره (پیش‌فرض، رفتارِ دقیقاً قدیمی) یا به حسابِ جداگانه‌ی
+    خودِ کسب‌وکار (account_balance) - که فقط یه عددِ داخلیه، نه چیزی که
+    economy_core ردیابی کنه (مثلِ همون الگویِ wallet/bank شخصی، ولی
+    مختصِ همین کسب‌وکار)."""
+    if b.get("profit_routing") == "account":
+        b["account_balance"] = b.get("account_balance", 0) + amount
+    else:
+        await economy_core.add_coins(chat_id, uid, amount, kind="BUSINESS",
+                                      note=f"سود {TYPES[b['type']]['name']} #{b['id']}")
+
+
 async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
     """سود/زیان از آخرین Collect رو تسویه می‌کنه. برمی‌گردونه (net, employees_fired).
     اگه موجودی کاربر برای هزینه‌ها کافی نباشه، به‌جای منفی‌شدن، کسب‌وکار وارد
@@ -221,15 +236,35 @@ async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
     net = round(revenue - expense)
     if net >= 0:
         if net > 0:
-            # فاز ۹ V18: اگه این کسب‌وکار شریک داره (economy_partnership)، سود
-            # طبقِ درصدِ سهمِ هرکس تقسیم می‌شه؛ بدونِ شریک دقیقاً مثلِ قبل
-            # ۱۰۰٪ به مالک می‌رسه (پیش‌فرض، چون partners پیشفرض خالیه).
+            remaining = net
+
+            # فاز ۱۵ V18 — استخدامِ واقعی: حقوقِ کارمندانِ واقعی از همون
+            # بخشی که از قبل به‌عنوانِ «هزینه‌ی حقوق» در hourly_expense کم
+            # شده بود پرداخت می‌شه (نه هزینه‌ی اضافه - فقط مقصدِ همون هزینه
+            # از «هیچ‌کس» به یه کاربرِ واقعی تغییر کرد). هر Slotِ بدونِ
+            # کاربرِ واقعی دقیقاً مثلِ قبل انتزاعی می‌مونه.
+            employed = b.get("employed_users", {})
+            for employee_uid_s, emp_info in employed.items():
+                if remaining <= 0:
+                    break
+                wage = round(elapsed_h * emp_info.get("salary_per_hour", 0))
+                wage = min(wage, remaining)
+                if wage > 0:
+                    await economy_core.add_coins(
+                        chat_id, int(employee_uid_s), wage, kind="salary",
+                        note=f"حقوقِ کارمندی در {TYPES[b['type']]['name']} #{b['id']}",
+                    )
+                    remaining -= wage
+
+            # فاز ۹ V18: اگه این کسب‌وکار شریک داره (economy_partnership)، باقیِ
+            # سود طبقِ درصدِ سهمِ هرکس تقسیم می‌شه؛ بدونِ شریک ۱۰۰٪ِ باقی‌مونده
+            # به مالک می‌رسه (پیش‌فرض، چون partners پیشفرض خالیه).
             partners = b.get("partners", {})
             if partners:
-                owner_share = net
+                owner_share = remaining
                 for partner_uid_s, fraction in partners.items():
                     partner_uid = int(partner_uid_s)
-                    share_amount = round(net * fraction)
+                    share_amount = round(remaining * fraction)
                     if share_amount > 0:
                         await economy_core.add_coins(
                             chat_id, partner_uid, share_amount, kind="BUSINESS",
@@ -237,11 +272,9 @@ async def _collect_one(chat_id: int, uid: int, b: dict) -> tuple[int, int]:
                         )
                     owner_share -= share_amount
                 if owner_share > 0:
-                    await economy_core.add_coins(chat_id, uid, owner_share, kind="BUSINESS",
-                                                  note=f"سود {TYPES[b['type']]['name']} #{b['id']}")
-            else:
-                await economy_core.add_coins(chat_id, uid, net, kind="BUSINESS",
-                                              note=f"سود {TYPES[b['type']]['name']} #{b['id']}")
+                    await _pay_owner_share(chat_id, uid, b, owner_share)
+            elif remaining > 0:
+                await _pay_owner_share(chat_id, uid, b, remaining)
         return net, 0
 
     # net منفیه: سعی کن از موجودی کاربر کم کنی؛ اگه نشد، یه Strike بخوره
@@ -360,6 +393,9 @@ async def buy_business_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "debt": 0, "crisis_strikes": 0, "bankrupt": False,  # فاز ۴ V18 — سیستمِ ورشکستگی
         "partners": {},  # فاز ۹ V18 — شراکت: uid(str) -> درصدِ سهم
         "branches": 1,  # فاز ۱۰ V18 — توسعه‌ی شعبه
+        "employed_users": {},  # فاز ۱۵ V18 — استخدامِ واقعی: uid(str) -> {salary_per_hour, hired_ts}
+        "account_balance": 0,  # فاز ۱۷ V18 — حسابِ بانکیِ جداگانه‌ی کسب‌وکار
+        "profit_routing": "wallet",  # "wallet" (پیش‌فرض، رفتارِ قدیمی) یا "account"
     }
     _log_history(b, "BUSINESS", f"خرید نو به قیمت {price:,}")
     owned(chat.id, uid).append(b)
@@ -401,6 +437,247 @@ async def sell_business_command(update: Update, context: ContextTypes.DEFAULT_TY
         f"✅ {TYPES[target['type']]['name']} #{target['id']} فروخته شد: +{payout:,} {config.CURRENCY_NAME}.\n"
         f"💰 موجودی: {new_wallet:,} {config.CURRENCY_NAME}"
     )
+    await host.save_state()
+
+
+# ---------------------------------------------------------------------------
+# 🔁 فاز ۱۶ V18 (تکمیلِ بخشِ۵: «انتقال مالکیت شرکت») — انتقالِ مالکیتِ یه
+# کسب‌وکار به یه کاربرِ واقعیِ دیگه (نه فروش به سیستم). برخلافِ
+# economy_property.transfer_property_command (که یک‌طرفه و هدیه‌ست)، این
+# دوطرفه‌ست: چون کسب‌وکار می‌تونه بدهی/شریک/کارمند داشته باشه، گیرنده باید
+# صریحاً قبول کنه (نه فقط یه هدیه‌ی بدونِ‌ریسک). قیمت اختیاریه (۰ = هدیه).
+# ---------------------------------------------------------------------------
+
+def _assign_fresh_business_id(owned_list: list) -> int:
+    existing = {item.get("id") for item in owned_list}
+    new_id = 1
+    while new_id in existing:
+        new_id += 1
+    return new_id
+
+
+async def propose_transfer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پیشنهاد انتقال کسب‌وکار [شناسه] [قیمت] (با Reply رویِ گیرنده؛ قیمتِ ۰ = هدیه)"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    if not (message.reply_to_message and message.reply_to_message.from_user):
+        await message.reply_text(
+            "رویِ پیامِ گیرنده Reply کن و بنویس: «پیشنهاد انتقال کسب‌وکار [شناسه] [قیمت]» (قیمتِ ۰ = هدیه)"
+        )
+        return
+    args = context.args or []
+    if not args:
+        await message.reply_text("شناسه‌ی کسب‌وکار رو هم بنویس.")
+        return
+    uid = update.effective_user.id
+    target = _find_owned(chat.id, uid, args)
+    if not target:
+        await message.reply_text("همچین کسب‌وکاری توی مالکیتت نیست.")
+        return
+    receiver = message.reply_to_message.from_user
+    if receiver.id == uid:
+        await message.reply_text("نمی‌تونی به خودت منتقل کنی 😅")
+        return
+    price = 0
+    if len(args) >= 2:
+        try:
+            price = int(args[1].replace(",", ""))
+        except ValueError:
+            await message.reply_text("قیمت نامعتبره.")
+            return
+    if price < 0:
+        await message.reply_text("قیمت نمی‌تونه منفی باشه.")
+        return
+    if target.get("pending_transfer"):
+        await message.reply_text("این کسب‌وکار از قبل یه پیشنهادِ انتقالِ معلق داره.")
+        return
+
+    target["pending_transfer"] = {"to_uid": receiver.id, "price": price, "proposed_ts": time.time()}
+    price_txt = f"{price:,} {config.CURRENCY_NAME}" if price > 0 else "رایگان (هدیه)"
+    await message.reply_text(
+        f"🔁 پیشنهادِ انتقالِ {TYPES[target['type']]['name']} #{target['id']} به {price_txt} ثبت شد. "
+        f"گیرنده باید با «قبول انتقال کسب‌وکار {target['id']}» (با Reply رویِ تو) قبول کنه."
+    )
+    await host.save_state()
+
+
+async def accept_transfer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """قبول انتقال کسب‌وکار [شناسه] (با Reply رویِ فرستنده‌ی پیشنهاد)"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    if not (message.reply_to_message and message.reply_to_message.from_user):
+        await message.reply_text("رویِ پیامِ فرستنده‌ی پیشنهاد Reply کن و بنویس: «قبول انتقال کسب‌وکار [شناسه]»")
+        return
+    args = context.args or []
+    if not args:
+        await message.reply_text("شناسه‌ی کسب‌وکار رو هم بنویس.")
+        return
+    try:
+        business_id = int(args[0])
+    except ValueError:
+        await message.reply_text("شناسه نامعتبره.")
+        return
+    owner = message.reply_to_message.from_user
+    buyer_uid = update.effective_user.id
+
+    target = next((b for b in owned(chat.id, owner.id) if b["id"] == business_id), None)
+    if not target:
+        await message.reply_text("همچین کسب‌وکاری پیدا نشد.")
+        return
+    pending = target.get("pending_transfer")
+    if not pending or pending["to_uid"] != buyer_uid:
+        await message.reply_text("هیچ پیشنهادِ انتقالی برایِ تو روی این کسب‌وکار نیست.")
+        return
+
+    price = pending["price"]
+    if price > 0:
+        try:
+            await economy_core.remove_coins(chat.id, buyer_uid, price, kind="OTHER",
+                                             note=f"خریدِ {TYPES[target['type']]['name']} #{business_id}")
+        except economy_core.InsufficientFundsError:
+            await message.reply_text(f"❌ موجودی کافی نیست. قیمت: {price:,} {config.CURRENCY_NAME}")
+            return
+        await economy_core.add_coins(chat.id, owner.id, price, kind="SALE",
+                                      note=f"فروشِ {TYPES[target['type']]['name']} #{business_id} به کاربرِ دیگه")
+
+    await _collect_one(chat.id, owner.id, target)  # قبل از انتقال، سودِ باقی‌مونده تسویه بشه
+    owned(chat.id, owner.id).remove(target)
+    del target["pending_transfer"]
+    target["id"] = _assign_fresh_business_id(owned(chat.id, buyer_uid))
+    _log_history(target, "OTHER", f"انتقالِ مالکیت از کاربرِ {owner.id} به {buyer_uid}")
+    owned(chat.id, buyer_uid).append(target)
+
+    await message.reply_text(
+        f"✅ {TYPES[target['type']]['name']} #{target['id']} الان مالِ توئه!"
+        + (f" ({price:,} {config.CURRENCY_NAME} پرداخت شد)" if price > 0 else " (هدیه)")
+    )
+    await host.save_state()
+
+
+async def cancel_transfer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """لغو انتقال کسب‌وکار [شناسه] / /canceltransfer <id>"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    uid = update.effective_user.id
+    target = _find_owned(chat.id, uid, context.args or [])
+    if not target or not target.get("pending_transfer"):
+        await message.reply_text("همچین پیشنهادِ انتقالِ معلقی نداری.")
+        return
+    del target["pending_transfer"]
+    await message.reply_text("✅ پیشنهادِ انتقال لغو شد.")
+    await host.save_state()
+
+
+# ---------------------------------------------------------------------------
+# 🏦 فاز ۱۷ V18 (تکمیلِ بخشِ۳: «حساب تجاری برای کسب‌وکارها») — یه حسابِ
+# بانکیِ جداگانه و مستقل از کیفِ‌پولِ شخصیِ مالک، فقط برایِ همین کسب‌وکار.
+# پیش‌فرض (profit_routing="wallet") دقیقاً رفتارِ قدیمیه - هیچ کسب‌وکارِ
+# موجودی بدونِ انتخابِ صریحِ مالک رفتارش عوض نمی‌شه.
+# ---------------------------------------------------------------------------
+
+async def deposit_to_business_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """واریز به حساب کسب‌وکار [شناسه] [مبلغ] / /depositbusiness <id> <amount>"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await message.reply_text("استفاده: «واریز به حساب کسب‌وکار [شناسه] [مبلغ]»")
+        return
+    uid = update.effective_user.id
+    target = _find_owned(chat.id, uid, args)
+    if not target:
+        await message.reply_text("همچین کسب‌وکاری توی مالکیتت نیست.")
+        return
+    try:
+        amount = int(args[1].replace(",", ""))
+    except ValueError:
+        await message.reply_text("مبلغ نامعتبره.")
+        return
+    if amount <= 0:
+        await message.reply_text("مبلغ باید مثبت باشه.")
+        return
+    try:
+        await economy_core.remove_coins(chat.id, uid, amount, kind="OTHER",
+                                         note=f"واریز به حسابِ {TYPES[target['type']]['name']} #{target['id']}")
+    except economy_core.InsufficientFundsError:
+        await message.reply_text(f"❌ موجودی کافی نیست.")
+        return
+    target["account_balance"] = target.get("account_balance", 0) + amount
+    await message.reply_text(
+        f"✅ {amount:,} {config.CURRENCY_NAME} به حسابِ کسب‌وکار واریز شد. موجودیِ حساب: {target['account_balance']:,}"
+    )
+    await host.save_state()
+
+
+async def withdraw_from_business_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """برداشت از حساب کسب‌وکار [شناسه] [مبلغ] / /withdrawbusiness <id> <amount>"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await message.reply_text("استفاده: «برداشت از حساب کسب‌وکار [شناسه] [مبلغ]»")
+        return
+    uid = update.effective_user.id
+    target = _find_owned(chat.id, uid, args)
+    if not target:
+        await message.reply_text("همچین کسب‌وکاری توی مالکیتت نیست.")
+        return
+    try:
+        amount = int(args[1].replace(",", ""))
+    except ValueError:
+        await message.reply_text("مبلغ نامعتبره.")
+        return
+    balance = target.get("account_balance", 0)
+    if amount <= 0 or amount > balance:
+        await message.reply_text(f"❌ موجودیِ حسابِ کسب‌وکار فقط {balance:,} {config.CURRENCY_NAME}ـه.")
+        return
+    target["account_balance"] = balance - amount
+    new_wallet = await economy_core.add_coins(chat.id, uid, amount, kind="OTHER",
+                                               note=f"برداشت از حسابِ {TYPES[target['type']]['name']} #{target['id']}")
+    await message.reply_text(f"✅ {amount:,} {config.CURRENCY_NAME} برداشت شد. موجودیِ کیف‌پول: {new_wallet:,}")
+    await host.save_state()
+
+
+async def set_profit_routing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تنظیم واریز سود [شناسه] [کیف‌پول|حساب] / /setprofitrouting <id> <wallet|account>"""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await message.reply_text("استفاده: «تنظیم واریز سود [شناسه] [کیف‌پول|حساب]»")
+        return
+    uid = update.effective_user.id
+    target = _find_owned(chat.id, uid, args)
+    if not target:
+        await message.reply_text("همچین کسب‌وکاری توی مالکیتت نیست.")
+        return
+    choice_raw = args[1].strip()
+    mapping = {"کیف‌پول": "wallet", "کیف پول": "wallet", "wallet": "wallet", "حساب": "account", "account": "account"}
+    choice = mapping.get(choice_raw)
+    if choice not in getattr(config, "BUSINESS_PROFIT_ROUTING_OPTIONS", ("wallet", "account")):
+        await message.reply_text("گزینه نامعتبره؛ یکی از «کیف‌پول» یا «حساب» رو بنویس.")
+        return
+    target["profit_routing"] = choice
+    label = "کیف‌پولِ شخصی" if choice == "wallet" else "حسابِ کسب‌وکار"
+    await message.reply_text(f"✅ از این به بعد، سودِ این کسب‌وکار به {label} واریز می‌شه.")
     await host.save_state()
 
 
@@ -807,10 +1084,13 @@ async def my_business_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         tax_note = f" — ⚠️مالیات: {due:,}" if due > 0 else ""
         debt_note = f" — ⚠️بدهی: {b.get('debt', 0):,}" if b.get("debt", 0) > 0 else ""
         ad_badge = "📢" if _is_ad_active(b) else ""
+        transfer_note = " — 🔁 پیشنهادِ انتقالِ معلق" if b.get("pending_transfer") else ""
+        account_note = f" — 🏦 حسابِ کسب‌وکار: {b.get('account_balance', 0):,}" if b.get("account_balance", 0) > 0 else ""
         lines.append(
             f"#{b['id']} {info['name']} Lv{b['level']} {ad_badge} — کارمند: {b['employees']}/{info['max_employees']} — "
             f"موجودی: {b['inventory']}/{info['inventory_capacity']} — قیمت: ×{b['price_mult']} — "
-            f"درآمد: {round(hourly_revenue(chat.id, b))}‎/h — هزینه: {round(hourly_expense(b))}‎/h{tax_note}{debt_note}"
+            f"درآمد: {round(hourly_revenue(chat.id, b))}‎/h — هزینه: {round(hourly_expense(b))}‎/h"
+            f"{tax_note}{debt_note}{transfer_note}{account_note}"
         )
     lines.append("")
     if total_net > 0:

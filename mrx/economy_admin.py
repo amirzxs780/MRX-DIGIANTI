@@ -478,6 +478,182 @@ async def admin_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
+# 🧠 فاز ۱۲ V18 (تکمیلِ بخشِ ۱۶) — بررسیِ تراکنشِ مشکوک، دیدِ کلِ‌گروهیِ
+# شرکت‌ها/بدهی‌ها، مدیریتِ نرخِ سود و قوانینِ اعتباری
+# ---------------------------------------------------------------------------
+
+async def suspicious_transactions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تراکنش‌های مشکوک [آستانه] / /suspicioustx [threshold]
+    از economy_core.find_suspicious_transactions (که از قبل آماده بود ولی
+    هیچ‌جا صدا زده نمی‌شد) استفاده می‌کنه - یه هیوریستیکِ ساده (تراکنشِ
+    بزرگ)، نه تشخیصِ قطعیِ تقلب."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    if not host.has_permission(update.effective_user.id, "manage_economy"):
+        await message.reply_text("⛔ این دستور فقط برای ادمین‌های اقتصاده.")
+        return
+    args = context.args or []
+    threshold = getattr(config, "ADMIN_SUSPICIOUS_TX_DEFAULT_THRESHOLD", 50000)
+    if args:
+        try:
+            threshold = int(args[0].replace(",", ""))
+        except ValueError:
+            await message.reply_text("آستانه نامعتبره.")
+            return
+    lookback_days = getattr(config, "ADMIN_SUSPICIOUS_TX_LOOKBACK_DAYS", 3)
+    since_ts = time.time() - lookback_days * 86400
+    records = economy_core.find_suspicious_transactions(chat.id, threshold, since_ts, limit=15)
+    if not records:
+        await message.reply_text(f"✅ تراکنشِ مشکوکی (بالایِ {threshold:,}) توی {lookback_days} روزِ اخیر پیدا نشد.")
+        return
+    lines = [f"🔎 تراکنش‌هایِ بزرگِ {lookback_days} روزِ اخیر (بالایِ {threshold:,}):", ""]
+    for rec in records:
+        ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(rec["timestamp"]))
+        lines.append(
+            f"• {rec['transaction_id']} — {rec['type']} — {rec['amount']:,} {config.CURRENCY_NAME} "
+            f"— کاربر {rec['user_id']} — {ts}"
+        )
+    await message.reply_text("\n".join(lines))
+
+
+def list_group_businesses(chat_id: int) -> list[tuple[int, dict]]:
+    """[(owner_uid, business_dict), ...] همه‌ی کسب‌وکارهایِ گروه، نزولی بر
+    اساسِ ارزشِ فعلی - منطقِ خالص، جدا از فرمت‌بندیِ تلگرامی تا قابلِ‌تست باشه."""
+    host = _host()
+    import economy_business
+    members = host._known_members.get(chat_id, set())
+    rows = []
+    for uid in members:
+        for b in economy_business.owned(chat_id, uid):
+            rows.append((uid, b))
+    rows.sort(key=lambda r: economy_business.current_value(r[1]), reverse=True)
+    return rows
+
+
+async def group_businesses_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شرکت‌های گروه / /groupbusinesses — دیدِ کلِ‌گروهی (نه فقط «کسب‌وکارِ من»)."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    if not host.has_permission(update.effective_user.id, "manage_economy"):
+        await message.reply_text("⛔ این دستور فقط برای ادمین‌های اقتصاده.")
+        return
+    import economy_business
+    rows = list_group_businesses(chat.id)
+    if not rows:
+        await message.reply_text("هیچ کسب‌وکاری توی این گروه ثبت نشده.")
+        return
+    lines = [f"🏢 کسب‌وکارهایِ گروه ({len(rows)} مورد):", ""]
+    for uid, b in rows[:20]:
+        info = economy_business.TYPES.get(b["type"], {"name": b["type"]})
+        status = " 🚫ورشکسته" if b.get("bankrupt") else ""
+        lines.append(
+            f"#{b['id']} {info.get('name', b['type'])} (مالک: {uid}){status} — "
+            f"ارزش: {economy_business.current_value(b):,}"
+        )
+    if len(rows) > 20:
+        lines.append(f"... و {len(rows) - 20} موردِ دیگه")
+    await message.reply_text("\n".join(lines))
+
+
+def list_group_debts(chat_id: int) -> list[tuple[int, int, int, int]]:
+    """[(uid, business_debt, loan_debt, total), ...] فقط کاربرهایی که بدهیِ
+    فعال دارن، نزولی بر اساسِ مجموعِ بدهی."""
+    host = _host()
+    import economy_business
+    import economy_bank
+    members = host._known_members.get(chat_id, set())
+    rows = []
+    for uid in members:
+        business_debt = sum(b.get("debt", 0) for b in economy_business.owned(chat_id, uid))
+        loan_debt = economy_bank.total_active_loan_debt(chat_id, uid)
+        total = business_debt + loan_debt
+        if total > 0:
+            rows.append((uid, business_debt, loan_debt, total))
+    rows.sort(key=lambda r: r[3], reverse=True)
+    return rows
+
+
+async def group_debts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدهی‌های گروه / /groupdebts — مجموعِ بدهیِ کسب‌وکار + وامِ فعالِ هر عضو."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    if not host.has_permission(update.effective_user.id, "manage_economy"):
+        await message.reply_text("⛔ این دستور فقط برای ادمین‌های اقتصاده.")
+        return
+    rows = list_group_debts(chat.id)
+    if not rows:
+        await message.reply_text("الان هیچ بدهیِ فعالی توی این گروه نیست.")
+        return
+    lines = [f"💳 بدهی‌هایِ فعالِ گروه ({len(rows)} کاربر):", ""]
+    for uid, business_debt, loan_debt, total in rows[:20]:
+        lines.append(f"کاربر {uid}: بدهیِ کسب‌وکار {business_debt:,} + وام {loan_debt:,} = {total:,}")
+    if len(rows) > 20:
+        lines.append(f"... و {len(rows) - 20} موردِ دیگه")
+    await message.reply_text("\n".join(lines))
+
+
+async def set_interest_rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تنظیم نرخ سود بانک [ضریب] / /setinterestrate <multiplier> — مدیریتِ نرخِ سود."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    if not host.has_permission(update.effective_user.id, "manage_economy"):
+        await message.reply_text("⛔ این دستور فقط برای ادمین‌های اقتصاده.")
+        return
+    args = context.args or []
+    if not args:
+        await message.reply_text("استفاده: «تنظیم نرخ سود بانک [ضریب]» (مثلاً ۱ = بدونِ تغییر، ۱.۵ = ۵۰٪ بیشتر)")
+        return
+    try:
+        multiplier = float(args[0])
+    except ValueError:
+        await message.reply_text("ضریبِ نامعتبر.")
+        return
+    import economy_bank
+    applied = economy_bank.set_interest_multiplier(chat.id, multiplier)
+    _audit(chat.id, update.effective_user.id, "SET_INTEREST_MULTIPLIER", note=str(applied))
+    await message.reply_text(f"✅ ضریبِ سودِ بانکِ این گروه روی ×{applied} تنظیم شد.")
+    await host.save_state()
+
+
+async def set_credit_rule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تنظیم حداقل اعتبار وام [عدد] / /setcreditmin <score> — مدیریتِ قوانینِ اعتباری."""
+    host = _host()
+    chat, message = update.effective_chat, update.effective_message
+    if not chat or chat.type not in ("group", "supergroup"):
+        await message.reply_text("این دستور فقط توی گروه کار می‌کنه.")
+        return
+    if not host.has_permission(update.effective_user.id, "manage_economy"):
+        await message.reply_text("⛔ این دستور فقط برای ادمین‌های اقتصاده.")
+        return
+    args = context.args or []
+    if not args:
+        await message.reply_text("استفاده: «تنظیم حداقل اعتبار وام [عدد]»")
+        return
+    try:
+        min_score = int(args[0])
+    except ValueError:
+        await message.reply_text("عددِ نامعتبر.")
+        return
+    import economy_bank
+    applied = economy_bank.set_credit_min_for_loan(chat.id, min_score)
+    _audit(chat.id, update.effective_user.id, "SET_CREDIT_MIN", note=str(applied))
+    await message.reply_text(f"✅ حداقلِ امتیازِ اعتباریِ لازم برایِ وام روی {applied} تنظیم شد.")
+    await host.save_state()
+
+
+# ---------------------------------------------------------------------------
 # 💾 Persistence
 # ---------------------------------------------------------------------------
 

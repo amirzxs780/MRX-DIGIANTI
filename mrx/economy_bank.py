@@ -72,6 +72,38 @@ def _level_info(chat_id: int, uid: int) -> dict:
     return config.BANK_LEVELS.get(_level(chat_id, uid), config.BANK_LEVELS[1])
 
 
+# فاز ۱۲ V18 (بخشِ۱۶: «مدیریتِ نرخِ سود»، «مدیریتِ قوانینِ اعتباری») — این دو
+# Override فقط توسطِ ادمینِ اقتصاد (از economy_admin.py) تنظیم می‌شن؛ پیش‌فرض
+# دقیقاً مقدارِ قدیمی رو می‌ده، یعنی تا ادمین دستی چیزی تنظیم نکنه هیچ
+# رفتاری عوض نمی‌شه.
+_interest_multiplier: dict[int, float] = {}
+_credit_min_override: dict[int, int] = {}
+
+
+def interest_multiplier(chat_id: int) -> float:
+    return _interest_multiplier.get(chat_id, 1.0)
+
+
+def set_interest_multiplier(chat_id: int, multiplier: float) -> float:
+    lo = getattr(config, "BANK_MIN_INTEREST_MULTIPLIER", 0.0)
+    hi = getattr(config, "BANK_MAX_INTEREST_MULTIPLIER", 3.0)
+    multiplier = max(lo, min(hi, multiplier))
+    _interest_multiplier[chat_id] = multiplier
+    return multiplier
+
+
+def credit_min_for_loan(chat_id: int) -> int:
+    return _credit_min_override.get(chat_id, getattr(config, "CREDIT_SCORE_MIN_FOR_LOAN", 400))
+
+
+def set_credit_min_for_loan(chat_id: int, min_score: int) -> int:
+    lo = getattr(config, "CREDIT_MIN_FOR_LOAN_FLOOR", 0)
+    hi = getattr(config, "CREDIT_MIN_FOR_LOAN_CEILING", 900)
+    min_score = max(lo, min(hi, min_score))
+    _credit_min_override[chat_id] = min_score
+    return min_score
+
+
 def _new_deposit_id(chat_id: int, uid: int) -> int:
     n = _next_id[chat_id].get(uid, 0) + 1
     _next_id[chat_id][uid] = n
@@ -120,6 +152,13 @@ def total_active_loan_debt(chat_id: int, uid: int) -> int:
     """مجموعِ باقی‌مانده‌ی همه‌ی وام‌های فعال - برای گزارشِ حسابداری (فاز ۵ V18:
     economy_accounting) به‌عنوانِ یکی از اقلامِ بدهی."""
     return sum(l.get("remaining", 0) for l in _active_loans(chat_id, uid))
+
+
+def due_loans(chat_id: int, uid: int) -> list[dict]:
+    """وام‌های فعالی که قسطشون سررسید شده - برای هوشِ اقتصادی (فاز ۱۱ V18:
+    economy_analysis)."""
+    now = time.time()
+    return [l for l in _active_loans(chat_id, uid) if l.get("next_due_ts", 0) <= now]
 
 
 async def _resolve_loans(chat_id: int, uid: int) -> list[str]:
@@ -175,6 +214,7 @@ def pending_interest(chat_id: int, uid: int) -> int:
         getattr(config, "BANK_INTEREST_CLAIM_MAX_DAYS", 14),
     )
     rate = getattr(config, "BANK_INTEREST_RATE_DAILY", 0.01) + _level_info(chat_id, uid)["interest_bonus"]
+    rate *= interest_multiplier(chat_id)  # فاز ۱۲ V18 — Override دستیِ ادمین (پیش‌فرض ۱.۰، یعنی بدونِ تغییر)
     try:
         import economy_events
         rate *= economy_events.bank_interest_multiplier(chat_id)
@@ -616,7 +656,7 @@ async def take_loan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     score = get_credit_score(chat.id, uid)
-    min_score = getattr(config, "CREDIT_SCORE_MIN_FOR_LOAN", 400)
+    min_score = credit_min_for_loan(chat.id)  # فاز ۱۲ V18 — Override دستیِ ادمین (پیش‌فرض همون config قدیمی)
     if score < min_score:
         await message.reply_text(f"❌ امتیاز اعتباریت ({score}) کمتر از حد لازمه ({min_score}). با «اعتبار» وضعیتت رو ببین.")
         return
@@ -728,6 +768,9 @@ def _collect_state() -> dict:
         "credit_score": {str(c): dict(v) for c, v in _credit_score.items()},
         "loans": {str(c): {str(u): loans for u, loans in v.items()} for c, v in _loans.items()},
         "next_loan_id": {str(c): dict(v) for c, v in _next_loan_id.items()},
+        # فاز ۱۲ V18 — Overrideهایِ ادمینِ بانک
+        "interest_multiplier": {str(c): m for c, m in _interest_multiplier.items()},
+        "credit_min_override": {str(c): v for c, v in _credit_min_override.items()},
     }
 
 
@@ -794,5 +837,10 @@ def load_state():
             _loans[int(cid)][int(uid)] = loans
     for cid, v in data.get("next_loan_id", {}).items():
         _next_loan_id[int(cid)] = {int(u): n for u, n in v.items()}
+
+    for cid, m in data.get("interest_multiplier", {}).items():
+        _interest_multiplier[int(cid)] = float(m)
+    for cid, v in data.get("credit_min_override", {}).items():
+        _credit_min_override[int(cid)] = int(v)
 
     logger.info("وضعیت موتور Bank از فایل بارگذاری شد.")
